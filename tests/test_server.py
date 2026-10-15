@@ -95,3 +95,51 @@ def test_sync_runs_in_background(server):
 def test_rejects_foreign_host_header(server):
     base, _, _ = server
     assert req(base + "/data/summary.json", headers={"Host": "evil.example"})[0] == 403
+
+
+@pytest.mark.parametrize("host,lan,ok", [
+    ("127.0.0.1:8765", False, True), ("localhost:8765", False, True), ("[::1]:8765", False, True),
+    ("192.168.1.20:8765", False, False), ("192.168.1.20:8765", True, True),
+    ("attacker.example", True, False), ("attacker.example:8765", True, False), ("", True, False),
+])
+def test_host_allowed_blocks_dns_rebinding(host, lan, ok):
+    from garmin_health.server import host_allowed
+
+    assert host_allowed(host, allow_lan=lan) is ok
+
+
+def _raw_post(base, path, body: bytes, length=None):
+    import http.client
+    from urllib.parse import urlsplit
+
+    u = urlsplit(base)
+    conn = http.client.HTTPConnection(u.hostname, u.port, timeout=5)
+    conn.putrequest("POST", path)
+    conn.putheader("Content-Type", "application/json")
+    conn.putheader("Content-Length", str(len(body) if length is None else length))
+    conn.endheaders()
+    conn.send(body)
+    resp = conn.getresponse()
+    status = resp.status
+    conn.close()
+    return status
+
+
+def test_bad_bodies_get_an_answer(server):
+    base, _, _ = server
+    assert _raw_post(base, "/api/settings", b"{}", length=-1) == 400
+    assert _raw_post(base, "/api/settings", b'{"hr_max": 1e400}') == 400
+    assert _raw_post(base, "/api/settings", b'{"sleep_baseline_h": 1e400}') == 400
+    assert _raw_post(base, "/api/settings", b"[1,2]") == 400
+
+
+def test_concurrent_journal_saves_keep_both(server):
+    base, paths, _ = server
+    days = [d["date"] for d in json.loads(req(base + "/data/summary.json")[1])["days"][-6:]]
+    threads = [threading.Thread(target=req, args=(base + "/api/journal", "POST", {"date": d, "answers": {"sauna": True}}, JSON)) for d in days]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    entries = json.loads(paths.journal.read_text(encoding="utf-8"))["entries"]
+    assert all(entries[d].get("sauna") is True for d in days)

@@ -77,3 +77,52 @@ def test_plan_days_first_run_uses_backfill(tmp_path):
     store = RawStore(tmp_path)
     days, refresh_from = gsync.plan_days(store, today=TODAY, backfill=90)
     assert len(days) == 90 and days[-1] == "2026-10-15" and refresh_from == "2026-10-12"
+
+
+class HTTPError(Exception):
+    pass
+
+
+class GarminConnectTooManyRequestsError(Exception):
+    pass
+
+
+class FlakyClient(FakeClient):
+    """Lỗi mạng đúng 1 lần cho một (loại, ngày)."""
+
+    def __init__(self, bad):
+        super().__init__()
+        self.bad = set(bad)
+
+    def _hit(self, kind, d):
+        if (kind, d) in self.bad:
+            self.bad.discard((kind, d))
+            self.calls.append((kind, d))
+            raise HTTPError("502")
+        return super()._hit(kind, d)
+
+
+def test_failed_old_day_is_retried_on_next_sync(tmp_path):
+    paths = default_paths(tmp_path)
+    gsync.sync(paths, client=FlakyClient({("sleep", "2026-09-20")}), days=30, today=TODAY, pause=0, log=lambda *_: None)
+    store = RawStore(paths.raw)
+    assert not store.has("sleep", "2026-09-20")          # lỗi ⇒ KHÔNG lưu rỗng
+    client = FakeClient()
+    gsync.sync(paths, client=client, today=date(2026, 10, 16), pause=0, log=lambda *_: None)
+    assert ("sleep", "2026-09-20") in client.calls and store.has("sleep", "2026-09-20")
+    assert ("summary", "2026-09-20") not in client.calls  # loại đã có thì không tải lại
+
+
+def test_persistent_rate_limit_stops_quickly(tmp_path, monkeypatch):
+    monkeypatch.setattr(gsync, "RATE_LIMIT_WAIT_S", 0)
+
+    class Limited(FakeClient):
+        def _hit(self, kind, d):
+            self.calls.append((kind, d))
+            if len(self.calls) > 5:
+                raise GarminConnectTooManyRequestsError("429")
+            return {"ok": True}
+
+    client = Limited()
+    result = gsync.sync(default_paths(tmp_path), client=client, days=90, today=TODAY, pause=0, log=lambda *_: None)
+    assert result["aborted"] and len(client.calls) <= 7

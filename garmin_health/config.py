@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,7 +91,8 @@ def read_json(path: Path, default=None):
 def write_json(path: Path, obj, *, compact: bool = False) -> None:
     """Ghi nguyên tử (tmp + replace) để server không đọc phải file dở dang."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # tên tạm riêng theo tiến trình + luồng: hai lần ghi đồng thời không giẫm lên nhau
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     if compact:
         text = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
     else:
@@ -121,6 +124,9 @@ def save_settings(paths: Paths, updates: dict) -> dict:
 
 def validate_settings(updates: dict) -> dict:
     out: dict = {}
+    for key, v in updates.items():
+        if isinstance(v, float) and not math.isfinite(v):
+            raise ValueError(f"{key}: giá trị không hợp lệ")
     if "sleep_baseline_h" in updates:
         v = float(updates["sleep_baseline_h"])
         if not 5.0 <= v <= 11.0:

@@ -13,6 +13,7 @@ Mặc định chỉ nghe 127.0.0.1. POST bắt buộc Content-Type JSON và Orig
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import threading
@@ -71,7 +72,10 @@ class App:
             with self.lock:
                 self.build_fn()
             errs = (result or {}).get("error_count") or 0
-            self.status.update(label=f"Xong{f' ({errs} lỗi nhỏ)' if errs else ''}")
+            if (result or {}).get("aborted"):
+                self.status.update(error=result["aborted"], label="Dừng giữa chừng")
+            else:
+                self.status.update(label=f"Xong{f' ({errs} lỗi nhỏ)' if errs else ''}")
         except Exception as exc:  # báo lỗi lên UI thay vì chết thread im lặng
             name = type(exc).__name__
             msg = "Chưa đăng nhập Garmin — chạy: python run.py login" if name == "AuthRequired" else f"{name}: {exc}"
@@ -82,9 +86,26 @@ class App:
 
             self.status.update(running=False, finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
-    def rebuild(self) -> None:
-        with self.lock:
-            self.build_fn()
+
+def host_allowed(host_header: str, *, allow_lan: bool) -> bool:
+    """Chống DNS-rebinding: chỉ nhận Host là localhost, hoặc (khi --lan) một địa chỉ IP.
+
+    Trang độc trỏ tên miền của nó về IP máy này sẽ gửi Host = tên miền đó ⇒ bị chặn.
+    """
+    host = host_header.strip()
+    if host.startswith("["):              # [::1]:8765
+        host = host[1:].split("]")[0]
+    elif host.count(":") == 1:
+        host = host.split(":")[0]
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return True
+    if not allow_lan:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
 
 
 def make_handler(app: App, *, allow_lan: bool):
@@ -116,8 +137,7 @@ def make_handler(app: App, *, allow_lan: bool):
             self._send(HTTPStatus.OK, body, ctype)
 
         def _host_ok(self) -> bool:
-            host = (self.headers.get("Host") or "").split(":")[0]
-            return allow_lan or host in ("127.0.0.1", "localhost", "[::1]")
+            return host_allowed(self.headers.get("Host") or "", allow_lan=allow_lan)
 
         def _post_ok(self) -> bool:
             if not (self.headers.get("Content-Type") or "").startswith("application/json"):
@@ -129,8 +149,8 @@ def make_handler(app: App, *, allow_lan: bool):
 
         def _body(self) -> dict:
             length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_BODY:
-                raise ValueError("body quá lớn")
+            if not 0 <= length <= MAX_BODY:
+                raise ValueError("Content-Length không hợp lệ")
             data = json.loads(self.rfile.read(length) or b"{}")
             if not isinstance(data, dict):
                 raise ValueError("body phải là object JSON")
@@ -174,15 +194,20 @@ def make_handler(app: App, *, allow_lan: bool):
                     answers = body.get("answers")
                     if not isinstance(answers, dict):
                         raise ValueError("answers phải là object")
-                    save_journal_entry(app.paths, day, answers)
-                    app.rebuild()
+                    with app.lock:   # đọc–sửa–ghi journal.json không được xen kẽ
+                        save_journal_entry(app.paths, day, answers)
+                        app.build_fn()
                     return self._json(HTTPStatus.OK, {"ok": True})
                 if path == "/api/settings":
-                    settings = save_settings(app.paths, body)
-                    app.rebuild()
+                    with app.lock:
+                        settings = save_settings(app.paths, body)
+                        app.build_fn()
                     return self._json(HTTPStatus.OK, {"ok": True, "settings": settings})
-            except (ValueError, TypeError) as exc:
+            except (ValueError, TypeError, OverflowError) as exc:
                 return self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            except Exception as exc:  # luôn trả lời, đừng cắt kết nối im lặng
+                traceback.print_exc()
+                return self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"{type(exc).__name__}: {exc}"[:300]})
             return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     return Handler

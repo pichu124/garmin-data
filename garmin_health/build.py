@@ -88,6 +88,22 @@ def _minute_of(t: int, tz: int, day_start_local: int) -> float:
     return round((t + tz - day_start_local) / 60000, 1)
 
 
+MAX_TZ_DRIFT_MS = 2 * 3_600_000
+
+
+def _sleep_tz(s: dict, day_tz: int) -> int:
+    """Lệch giờ của chính giấc ngủ (từ cặp Local/GMT của nó) thay cho lệch giờ lúc nửa đêm.
+
+    Ngày đổi giờ mùa hè/đi máy bay, offset lúc 00:00 sai 1 giờ so với lúc thức dậy.
+    Một số tài khoản Garmin (connect.garmin.cn) bị cộng múi giờ HAI lần vào bản
+    Local ⇒ chỉ tin khi lệch so với offset ngày không quá 2 giờ.
+    """
+    if s.get("start_local") is None:
+        return day_tz
+    off = round((s["start_local"] - s["start"]) / 900_000) * 900_000
+    return off if abs(off - day_tz) <= MAX_TZ_DRIFT_MS else day_tz
+
+
 def _sleep_block(s: dict, tz: int) -> dict:
     slept_h = s["sleep_s"] / 3600
     in_bed_h = (s["end"] - s["start"]) / 3_600_000
@@ -110,17 +126,18 @@ def _sleep_block(s: dict, tz: int) -> dict:
     }
 
 
-def _activity_block(act: dict, samples, *, rhr: float, profile: dict) -> dict:
+def _activity_block(act: dict, samples, *, rhr: float, profile: dict, day_local: int) -> dict:
     t0 = act["start"]
     t1 = t0 + int(act["duration_s"] * 1000)
+    start_min = round((act["start_local"] - day_local) / 60000, 1)   # theo giờ Local của chính hoạt động
     load, zones = st.cardio_load(samples, rhr=rhr, hr_max=profile["hr_max"], sex=profile["sex"], t0=t0, t1=t1)
     return {
         "id": act["id"],
         "name": act["name"],
         "type": act["type"],
         "start": _hhmm((act["start_local"] % DAY_MS) / 60000),
-        "start_ms": t0,
-        "end_ms": t1,
+        "start_min": start_min,
+        "end_min": round(start_min + act["duration_s"] / 60, 1),
         "duration_min": round(act["duration_s"] / 60),
         "strain": st.strain_from_load(load) if load > 0 else None,
         "zones_min": [round(z) for z in zones[1:]],
@@ -161,8 +178,11 @@ def compute_days(norm: dict[str, dict], acts_by_day: dict[str, list[dict]], prof
         if samples:
             load, zones = st.cardio_load(samples, rhr=rhr_for_load, hr_max=profile["hr_max"], sex=profile["sex"], t0=day0, t1=day0 + DAY_MS)
             strain_block = {"score": st.strain_from_load(load), "load": round(load, 1), "zones_min": [round(z) for z in zones[1:]]}
+        # hoạt động vắt qua nửa đêm cần cả mẫu HR của ngày sau
+        next_samples = norm[dates[i + 1]]["hr"]["samples"] if i + 1 < len(dates) else []
+        act_samples = samples + next_samples
         activities = [
-            _activity_block(a, samples, rhr=rhr_for_load, profile=profile)
+            _activity_block(a, act_samples, rhr=rhr_for_load, profile=profile, day_local=day_local)
             for a in sorted(acts_by_day.get(d, []), key=lambda a: a["start"])
         ]
         summ = n["summary"]
@@ -189,14 +209,15 @@ def compute_days(norm: dict[str, dict], acts_by_day: dict[str, list[dict]], prof
         )
         sleep_block = None
         if s:
-            sleep_block = _sleep_block(s, tz)
+            stz = _sleep_tz(s, tz)
+            sleep_block = _sleep_block(s, stz)
             nights = [x["sleep"] for x in out[max(0, i - sl.CONSISTENCY_NIGHTS + 1) : i] if x.get("sleep")] + [sleep_block]
             cons = sl.consistency([x["onset_min"] for x in nights], [x["wake_min"] for x in nights])
             perf = sl.performance(slept_h=sleep_block["hours"], need_h=need["total_h"],
                                   efficiency=sleep_block["efficiency"], consistency_pct=cons)
             sleep_block.update(consistency=cons, performance=perf["score"], sufficiency=perf["sufficiency"],
-                               need_h=need["total_h"], start_min=_minute_of(s["start"], tz, day_local),
-                               end_min=_minute_of(s["end"], tz, day_local))
+                               need_h=need["total_h"], start_min=_minute_of(s["start"], stz, day_local),
+                               end_min=_minute_of(s["end"], stz, day_local))
 
         # --- Recovery: so với baseline 30 ngày TRƯỚC hôm nay ---
         bases = {
@@ -250,10 +271,10 @@ def day_detail(day: dict, n: dict, next_n: dict | None = None) -> dict:
     tz, d = day["_tz"], day["date"]
     day_local = nz.date_ms(d)
 
-    def mins(points, lo=-720, hi=1440):
+    def mins(points, lo=-720, hi=1440, tz_override=None):
         out = []
         for t, v in points:
-            m = _minute_of(t, tz, day_local)
+            m = _minute_of(t, tz if tz_override is None else tz_override, day_local)
             if lo <= m <= hi:
                 out.append([m, round(v, 1)])
         return out
@@ -261,15 +282,16 @@ def day_detail(day: dict, n: dict, next_n: dict | None = None) -> dict:
     s = n["sleep"]
     sleep = None
     if s:
+        stz = _sleep_tz(s, tz)
         sleep = {
-            "start_min": _minute_of(s["start"], tz, day_local),
-            "end_min": _minute_of(s["end"], tz, day_local),
-            "levels": [[_minute_of(a, tz, day_local), _minute_of(b, tz, day_local), stage] for a, b, stage in s["levels"]],
-            "hr": mins(s["hr"]),
-            "hrv": mins(n["hrv"]["readings"] or s["hrv_series"]),
+            "start_min": _minute_of(s["start"], stz, day_local),
+            "end_min": _minute_of(s["end"], stz, day_local),
+            "levels": [[_minute_of(a, stz, day_local), _minute_of(b, stz, day_local), stage] for a, b, stage in s["levels"]],
+            "hr": mins(s["hr"], tz_override=stz),
+            "hrv": mins(n["hrv"]["readings"] or s["hrv_series"], tz_override=stz),
         }
     next_sleep = (next_n or {}).get("sleep")
-    next_start = _minute_of(next_sleep["start"], tz, day_local) if next_sleep else None
+    next_start = _minute_of(next_sleep["start"], _sleep_tz(next_sleep, tz), day_local) if next_sleep else None
     return {
         "date": d,
         "next_sleep_start_min": next_start if next_start is not None and 0 <= next_start < 1440 else None,
@@ -279,13 +301,13 @@ def day_detail(day: dict, n: dict, next_n: dict | None = None) -> dict:
         "sleep": sleep,
         "activities": [
             {"id": a["id"], "name": a["name"], "type": a["type"], "strain": a["strain"],
-             "start_min": _minute_of(a["start_ms"], tz, day_local), "end_min": _minute_of(a["end_ms"], tz, day_local)}
+             "start_min": a["start_min"], "end_min": a["end_min"]}
             for a in day["activities"]
         ],
     }
 
 
-def planner(days: list[dict], profile: dict, settings: dict) -> dict | None:
+def planner(days: list[dict], profile: dict, settings: dict, *, nap_h: float = 0.0) -> dict | None:
     """Sleep Planner cho ĐÊM NAY (sau ngày mới nhất)."""
     if not days:
         return None
@@ -300,7 +322,7 @@ def planner(days: list[dict], profile: dict, settings: dict) -> dict | None:
         baseline_h=profile["sleep_baseline_h"],
         prev_strain=(last.get("strain") or {}).get("score"),
         shortfalls_h=shortfalls,
-        nap_h=0.0,
+        nap_h=nap_h,   # ngủ trưa HÔM NAY được trừ vào nhu cầu đêm nay
     )
     if settings.get("target_wake"):
         hh, mm = settings["target_wake"].split(":")
@@ -351,15 +373,15 @@ def build(paths: Paths, *, now: datetime | None = None, log=print) -> dict:
     for day in days:
         day.pop("_tz", None)
         for a in day["activities"]:
-            a.pop("start_ms", None)
-            a.pop("end_ms", None)
+            a.pop("start_min", None)
+            a.pop("end_min", None)
 
     summary = {
         "version": VERSION,
         "generated_at": now.isoformat(timespec="seconds"),
         "today": today,
         "profile": {k: v for k, v in profile.items() if k != "garmin_wake_min"},
-        "planner": planner(days, profile, settings),
+        "planner": planner(days, profile, settings, nap_h=norm[dates[-1]]["nap_s"] / 3600 if dates else 0.0),
         "settings": settings,
         "journal_questions": journal["questions"],
         "insights": {

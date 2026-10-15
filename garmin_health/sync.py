@@ -35,6 +35,10 @@ class AuthRequired(RuntimeError):
     """Chưa có token hợp lệ — cần chạy `python run.py login`."""
 
 
+class RateLimited(RuntimeError):
+    """Garmin vẫn báo 429 sau khi đã đợi — dừng hẳn, đừng gọi tiếp hàng trăm lần."""
+
+
 def _lib():
     try:
         import garminconnect  # noqa: F401
@@ -103,6 +107,13 @@ def sync(
     targets, refresh_from = plan_days(store, today=today, backfill=settings["backfill_days"], start=start)
 
     jobs = [(d, k) for d in targets for k in DAILY_KINDS if force or d >= refresh_from or not store.has(k, d)]
+    # lượt trước lỗi (mạng/5xx) thì KHÔNG lưu file ⇒ mọi cặp (ngày, loại) còn thiếu
+    # từ ngày cũ nhất đã có đều được thử lại, kể cả khi nằm ngoài cửa sổ tải lại
+    have = store.days()
+    if have and targets:
+        first, stop = date.fromisoformat(have[0]), date.fromisoformat(targets[0])
+        gaps = [((first + timedelta(days=i)).isoformat(), k) for i in range((stop - first).days) for k in DAILY_KINDS]
+        jobs = [j for j in gaps if not store.has(j[1], j[0])] + jobs
     total = len(jobs) + 2
     errors: list[str] = []
     done = 0
@@ -119,7 +130,9 @@ def sync(
                     raise AuthRequired(str(exc)) from exc
                 if name == "GarminConnectNotFoundError":
                     return None
-                if name == "GarminConnectTooManyRequestsError" and attempt == 1:
+                if name == "GarminConnectTooManyRequestsError":
+                    if attempt == 2:
+                        raise RateLimited("Garmin đang giới hạn tốc độ — dữ liệu đã tải vẫn được giữ, chạy lại sau ~1 giờ") from exc
                     log(f"[sync] Garmin báo quá nhiều yêu cầu — đợi {RATE_LIMIT_WAIT_S}s rồi thử lại")
                     time.sleep(RATE_LIMIT_WAIT_S)
                     continue
@@ -127,27 +140,34 @@ def sync(
                 return _FAILED
         return _FAILED
 
-    for day, kind in jobs:
-        obj = call(lambda: FETCHERS[kind](client, day), f"{kind} {day}")
-        if obj is not _FAILED:
-            store.save(kind, day, obj)
-        done += 1
-        if progress:
-            progress(done, total, f"{day} · {kind}")
-        if pause:
-            time.sleep(pause)
+    aborted = None
+    try:
+        for day, kind in jobs:
+            obj = call(lambda: FETCHERS[kind](client, day), f"{kind} {day}")
+            if obj is not _FAILED:
+                store.save(kind, day, obj)
+            done += 1
+            if progress:
+                progress(done, total, f"{day} · {kind}")
+            if pause:
+                time.sleep(pause)
 
-    if targets:
-        acts = call(lambda: client.get_activities_by_date(targets[0], targets[-1]), "activities")
-        for act in acts if isinstance(acts, list) else []:
-            store.save_activity(act)
-        log(f"[sync] {len(acts) if isinstance(acts, list) else 0} hoạt động")
-    done += 1
-    for name, fn in (("user_settings", client.get_user_profile), ("hr_zones", client.get_heart_rate_zones)):
-        obj = call(fn, name)
-        if obj is not _FAILED:
-            store.save_profile(name, obj)
-    done += 1
+        if jobs or targets:
+            first_day = min([d for d, _ in jobs] + targets[:1])
+            acts = call(lambda: client.get_activities_by_date(first_day, today.isoformat()), "activities")
+            for act in acts if isinstance(acts, list) else []:
+                store.save_activity(act)
+            log(f"[sync] {len(acts) if isinstance(acts, list) else 0} hoạt động")
+        done += 1
+        for name, fn in (("user_settings", client.get_user_profile), ("hr_zones", client.get_heart_rate_zones)):
+            obj = call(fn, name)
+            if obj is not _FAILED:
+                store.save_profile(name, obj)
+        done += 1
+    except RateLimited as exc:
+        aborted = str(exc)
+        errors.append(aborted)
+        log(f"[sync] ✗ {aborted}")
     if progress:
         progress(done, total, "xong")
 
@@ -157,6 +177,7 @@ def sync(
         "calls": len(jobs),
         "errors": errors[-20:],
         "error_count": len(errors),
+        "aborted": aborted,
     }
     state = read_json(paths.sync_state, {}) or {}
     state.update(last_sync=result["finished_at"], last_result=result)

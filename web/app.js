@@ -188,7 +188,9 @@
     else if (S.tab === 'health') main.append(...viewHealth(day()));
     else main.append(...viewJournal(day()));
     app.replaceChildren(main, bottomnav());
-    for (const fn of mounts) fn();
+    for (const fn of mounts) {   // một biểu đồ lỗi không được làm trắng các biểu đồ sau
+      try { fn(); } catch (e) { console.error(e); }
+    }
   }
   function topbarEmpty() {
     return h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Đồng bộ Garmin', onclick: startSync }, icon('sync')),
@@ -444,7 +446,8 @@
       fmt.dur(val(x, 'need', 'total_h')), fmt.n(val(x, 'sleep', 'performance')), fmt.n(val(x, 'sleep', 'efficiency'))]))));
     return out;
   }
-  const needRow = (label, hrs) => h('div', { class: 'need-row' }, h('span', { text: label }), h('b', { text: `${hrs < 0 ? '−' : ''}${fmt.dur(Math.abs(hrs || 0))}` }));
+  // dấu +/− nằm ở nhãn; giá trị luôn hiện trị tuyệt đối (nap_h lưu số âm)
+  const needRow = (label, hrs) => h('div', { class: 'need-row' }, h('span', { text: label }), h('b', { text: fmt.dur(Math.abs(hrs || 0)) }));
   function plannerCard(p) {
     return card('Kế hoạch ngủ đêm nay', `Để dậy lúc ${p.wake} (${p.wake_source}) · cần ${fmt.dur(p.need.total_h)} giấc ngủ`,
       h('div', { class: 'planner' }, p.options.map(o => h('div', { class: 'plan' },

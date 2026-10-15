@@ -163,6 +163,8 @@ def sleep(raw: Any) -> dict | None:
     return {
         "start": start,
         "end": end,
+        # bản Local riêng của giấc ngủ — đúng cả khi đổi giờ (DST) / đi khác múi giữa ngày
+        "start_local": parse_ts(dto.get("sleepStartTimestampLocal")),
         "sleep_s": sleep_s,
         "deep_s": num(dto.get("deepSleepSeconds")) or 0.0,
         "light_s": num(dto.get("lightSleepSeconds")) or 0.0,

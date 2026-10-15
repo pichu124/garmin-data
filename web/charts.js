@@ -185,7 +185,8 @@
       path += `${pen ? 'L' : 'M'}${x(i)},${y(d.value)}`; pen = true;
     });
     g.append(svg('path', { d: path, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-    const lastI = data.map(d => d.value).findLastIndex(v => v !== null && v !== undefined);
+    let lastI = -1;   // findLastIndex thiếu trên Safari < 15.4
+    for (let i = data.length - 1; i >= 0; i--) if (data[i].value !== null && data[i].value !== undefined) { lastI = i; break; }
     if (lastI >= 0) {
       g.append(svg('circle', { cx: x(lastI), cy: y(data[lastI].value), r: 4.5, fill: color, stroke: '#161f24', 'stroke-width': 2 }));
       g.append(svg('text', { x: x(lastI) + 8, y: y(data[lastI].value) + 4, class: 'axis-text', style: 'fill:#fff;font-weight:700' }, fmtY(data[lastI].value)));

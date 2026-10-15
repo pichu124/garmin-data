@@ -71,7 +71,8 @@ def weekly(days: list[dict], weeks: int = 26) -> list[dict]:
             "week": monday,
             "days": len(ds),
             "recovery": _r(mean(recs)),
-            "strain": _r(mean((d.get("strain") or {}).get("score") for d in ds), 1),
+            # ngày hôm nay còn đang tích strain ⇒ không tính vào trung bình tuần
+            "strain": _r(mean((d.get("strain") or {}).get("score") for d in ds if not d.get("partial")), 1),
             "sleep_perf": _r(mean((d.get("sleep") or {}).get("performance") for d in ds)),
             "sleep_h": _r(mean((d.get("sleep") or {}).get("hours") for d in ds), 2),
             "hrv": _r(mean((d.get("vitals") or {}).get("hrv") for d in ds), 1),
