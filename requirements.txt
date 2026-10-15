@@ -1,0 +1,4 @@
+# Tải dữ liệu Garmin Connect (cần Python >= 3.12)
+garminconnect>=0.3.18
+# Chỉ để chạy test
+pytest>=8

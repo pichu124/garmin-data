@@ -1,0 +1,12 @@
+# Dữ liệu sức khoẻ cá nhân + token đăng nhập — KHÔNG BAO GIỜ commit
+data/
+data-demo/
+.env
+*.token
+garmin_tokens.json
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
