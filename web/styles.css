@@ -46,9 +46,9 @@ a { color: var(--strain-hi); }
 .num { font-variant-numeric: tabular-nums; }
 
 /* ---------- khung ---------- */
-.app { max-width: 1080px; margin: 0 auto; padding: 0 16px 104px; }
+.app { max-width: 1080px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-bottom: 104px; }
 .topbar {
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
   display: grid; grid-template-columns: 44px 1fr 44px; align-items: center;
   padding: 10px 0 8px;
   /* nền mờ tràn hết chiều ngang dù nội dung bị giới hạn bề rộng */
@@ -264,8 +264,10 @@ table.data th:first-child, table.data td:first-child { text-align: left; }
 .tooltip .tt-row .key { width: 12px; height: 2px; border-radius: 1px; }
 .tooltip .tt-row .lbl { color: var(--text-2); }
 
+.sample-note { display: flex; justify-content: center; margin: 0 0 10px; }
+.sample-note span { font-size: 12px; color: var(--text-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
 /* trạng thái, toast, sheet */
-.toast { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 60; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; max-width: calc(100% - 32px); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+.toast { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 60; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; max-width: calc(100% - 32px); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
 .toast[hidden] { display: none; }
 .toast .bar { height: 3px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
 .toast .bar span { display: block; height: 100%; background: var(--strain-hi); transition: width .3s; }

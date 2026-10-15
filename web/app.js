@@ -129,7 +129,7 @@
     if (S.tab === 'home') parts.push(S.sub);
     if (S.tab !== 'trends' && S.date) parts.push(S.date);
     const hash = '#' + parts.join('/');
-    if (location.hash !== hash) history.replaceState(null, '', hash);
+    try { if (location.hash !== hash) history.replaceState(null, '', hash); } catch (e) { /* khung nhúng có thể chặn */ }
     render();
     window.scrollTo({ top: 0 });
   }
@@ -179,6 +179,7 @@
       return;
     }
     main.append(topbar());
+    if (S.staticMode) main.append(h('div', { class: 'sample-note' }, h('span', { text: 'Xem thử · dữ liệu mẫu, không phải số đo thật' })));
     if (S.tab === 'home') {
       main.append(homeTabs());
       const views = { overview: viewOverview, sleep: viewSleep, recovery: viewRecovery, strain: viewStrain };
@@ -683,7 +684,8 @@
   function toast(text, frac, sticky) {
     if (!toastNode) { toastNode = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite' }); document.body.append(toastNode); }
     toastNode.hidden = false;
-    toastNode.replaceChildren(h('div', { text }), isNum(frac) ? h('div', { class: 'bar' }, h('span', { style: { width: `${Math.round(frac * 100)}%` } })) : null);
+    const bar = isNum(frac) ? h('div', { class: 'bar' }, h('span', { style: { width: `${Math.round(frac * 100)}%` } })) : null;
+    toastNode.replaceChildren(...[h('div', { text }), bar].filter(Boolean));   // replaceChildren(null) sẽ in chữ "null"
     clearTimeout(toastNode._t);
     if (!sticky) toastNode._t = setTimeout(() => { toastNode.hidden = true; }, 4000);
   }
@@ -738,6 +740,7 @@
       msg,
       h('p', { class: 'note', text: days.length ? `Dữ liệu: ${days[0].date} → ${days[days.length - 1].date} (${days.length} ngày) · cập nhật ${S.summary.generated_at.replace('T', ' ').slice(0, 16)} UTC` : '' }),
       h('p', { class: 'note', text: S.staticMode ? 'Đây là bản xem thử với dữ liệu mẫu.' : 'Xem trên điện thoại: chạy `python run.py serve --lan` rồi mở địa chỉ in ra trên cùng Wi-Fi.' })));
+    back.addEventListener('keydown', e => { if (e.key === 'Escape') back.remove(); });
     document.body.append(back);
     need.focus();
   }
