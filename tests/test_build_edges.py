@@ -14,13 +14,13 @@ def _gmt(ms):
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.0")
 
 
-def _hr_day(store, day, tz, hr_at):
+def _hr_day(store, day, tz, hr_at, rhr=50):
     day0 = nz.date_ms(day) - tz
     store.save("heart_rates", day, {
-        "startTimestampGMT": _gmt(day0), "startTimestampLocal": _gmt(day0 + tz), "restingHeartRate": 50,
+        "startTimestampGMT": _gmt(day0), "startTimestampLocal": _gmt(day0 + tz), "restingHeartRate": rhr,
         "heartRateValues": [[t, hr_at(t + tz - nz.date_ms(day))] for t in range(day0, day0 + 24 * H, 120_000)],
     })
-    store.save("summary", day, {"restingHeartRate": 50})
+    store.save("summary", day, {"restingHeartRate": rhr})
 
 
 def test_activity_across_midnight_counts_both_sides(tmp_path):
@@ -35,6 +35,36 @@ def test_activity_across_midnight_counts_both_sides(tmp_path):
     s = build.build(paths, now=NOW, log=lambda *_: None)
     act = s["days"][0]["activities"][0]
     assert sum(act["zones_min"]) >= 58
+
+
+def _walk_and_run(m):
+    return 160 if 18 * H <= m < 18.5 * H else 100 if 8 * H <= m < 9.5 * H else 60
+
+
+def _last_day(tmp_path, last_rhr):
+    """5 ngày RHR 52 làm nền, ngày cuối cùng chuỗi HR (đi bộ 1.5h + chạy 30') với RHR `last_rhr`."""
+    paths = default_paths(tmp_path)
+    store = RawStore(paths.raw)
+    tz = 7 * H
+    days = [f"2026-10-0{i}" for i in range(1, 7)]
+    for d in days:
+        _hr_day(store, d, tz, _walk_and_run, rhr=last_rhr if d == days[-1] else 52)
+    start = nz.date_ms(days[-1]) + 18 * H - tz
+    store.save_activity({"activityId": 2, "activityName": "Chạy", "startTimeGMT": _gmt(start).replace("T", " ")[:19],
+                         "startTimeLocal": _gmt(start + tz).replace("T", " ")[:19], "duration": 1800.0})
+    store.save("stress", days[-1], {"stressValuesArray": [[start, 20], [start + 180_000, 80]]})
+    return build.build(paths, now=NOW, log=lambda *_: None)["days"][-1]
+
+
+def test_strain_uses_rhr_baseline_not_last_night(tmp_path):
+    low, usual = _last_day(tmp_path / "low", 48), _last_day(tmp_path / "usual", 52)
+    assert abs(low["strain"]["score"] - usual["strain"]["score"]) <= 0.1
+    assert abs(low["activities"][0]["strain"] - usual["activities"][0]["strain"]) <= 0.1
+    for block in (low["strain"], low["activities"][0]):
+        assert len(block["load_pct"]) == 6 and abs(sum(block["load_pct"]) - 100) <= 1
+    assert low["strain"]["light_min"] == 90 and low["strain"]["load_pct"][0] > 0
+    assert low["activities"][0]["light_min"] == 0 and low["activities"][0]["load_pct"][3] == 100
+    assert low["garmin"]["stress_min"] == {"rest": 3, "low": 0, "medium": 0, "high": 3}
 
 
 def test_dst_day_uses_sleep_own_offset(tmp_path):

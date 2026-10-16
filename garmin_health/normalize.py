@@ -220,6 +220,28 @@ def stress(raw: Any) -> dict:
     return {"stress": series(raw.get("stressValuesArray")), "body_battery": bb}
 
 
+STRESS_STEP_S = 180      # Garmin ghi stress mỗi 3 phút
+STRESS_MAX_GAP_S = 300   # như strain: mẫu cách nhau > 5' ⇒ mất tín hiệu, chỉ tính 1 nhịp
+
+
+def stress_minutes(points: list[tuple[int, float]]) -> dict | None:
+    """Phút ở mỗi mức stress theo mốc Garmin 0–25 / 26–50 / 51–75 / 76–100.
+
+    Giá trị âm (-1 không đo, -2 đang vận động) bị bỏ; None khi không có mẫu hợp lệ.
+    """
+    out = dict.fromkeys(("rest", "low", "medium", "high"), 0.0)
+    valid = False
+    for i, (t, v) in enumerate(points):
+        if v < 0:
+            continue
+        step = (points[i + 1][0] - t) / 1000 if i + 1 < len(points) else STRESS_STEP_S
+        if step > STRESS_MAX_GAP_S:
+            step = STRESS_STEP_S
+        out["rest" if v <= 25 else "low" if v <= 50 else "medium" if v <= 75 else "high"] += step / 60
+        valid = True
+    return {k: round(m) for k, m in out.items()} if valid else None
+
+
 def readiness(raw: Any) -> dict:
     rows = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
     rows = [r for r in rows if isinstance(r, dict) and pos(r.get("score")) is not None]

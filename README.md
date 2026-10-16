@@ -103,9 +103,18 @@ SpO2 giảm > 1 độ lệch (dấu hiệu ốm). Ngày "bình thường" ≈ 58
 
 **Strain**: mỗi mẫu nhịp tim → `%HRR = (HR − RHR)/(HRmax − RHR)` → TRIMP
 Banister `x·0,64·e^(1,92x)` mỗi phút (nữ: 0,86 và 1,67), bỏ qua dưới 20% HRR
-(sinh hoạt nhẹ) → `Strain = 21·(1 − e^(−tải/176))`. Hiệu chỉnh: ngày chỉ đi lại
+(ngồi yên) → `Strain = 21·(1 − e^(−tải/176))`. Hiệu chỉnh: ngày chỉ đi lại
 ≈ 3–6, chạy 60 phút vừa sức ≈ 12–14, 2,5 giờ cường độ cao ≈ 18–19.
+RHR trong %HRR = trung bình RHR 30 ngày trước hôm đó (chưa đủ 4 ngày thì dùng
+RHR hôm đó) — một đêm RHR thấp bất thường không thổi phồng strain cả ngày.
 HRmax lấy theo thứ tự: cài đặt → vùng tim trên Garmin → 208 − 0,7·tuổi → dữ liệu.
+Vùng 1–5 = 50–60 / 60–70 / 70–80 / 80–90 / 90–100% HRR. **Nhẹ 20–50% HRR**
+(đi lại, việc nhà) dưới Vùng 1 nhưng vẫn có tải, nên ngày chỉ đi lại có strain
+dù vùng 1–5 đều 0 phút; `light_min` là số phút nhẹ, `load_pct` là % tải theo
+[nhẹ, Vùng 1…5].
+
+**Stress theo mức** (`stress_min`): phút ở 0–25 nghỉ / 26–50 thấp / 51–75 vừa /
+76–100 cao (thang Garmin), bỏ mẫu -1/-2 (không đo/đang vận động) và khoảng mất tín hiệu.
 
 **Nhu cầu ngủ** = nền (mặc định 7h45) + tối đa 1h theo strain hôm qua
 (từ strain 8 trở lên) + nợ ngủ (50% / 25% / 12,5% phần thiếu của 3 đêm trước,

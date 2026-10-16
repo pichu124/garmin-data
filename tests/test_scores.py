@@ -37,8 +37,16 @@ def test_strain_is_monotonic_and_capped():
 
 def test_gaps_do_not_inflate_load():
     samples = [(0, 160), (6 * 3_600_000, 160)]   # 2 mẫu cách 6 giờ ⇒ chỉ tính ~2 phút mỗi mẫu
-    load, zones = st.cardio_load(samples, rhr=50, hr_max=190)
+    zones = st.cardio_load(samples, rhr=50, hr_max=190).zones
     assert sum(zones) == pytest.approx(4.0)
+
+
+def test_walking_day_load_shows_as_light_minutes():
+    samples = _samples(600, 55) + _samples(90, 100, 600 * 60_000)   # HR 100 ≈ 36% HRR: dưới Vùng 1
+    c = st.cardio_load(samples, rhr=50, hr_max=190)
+    assert c.load > 0 and c.zones[1:] == [0.0] * 5
+    assert c.light_min == pytest.approx(90.0)
+    assert c.load_by_zone[0] == pytest.approx(c.load)
 
 
 def test_strain_target_follows_recovery():
