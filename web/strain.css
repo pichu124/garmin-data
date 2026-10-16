@@ -1,1 +1,2 @@
 /* CSS riêng của màn hình Strain (view-strain.js). */
+.legend.l3 { grid-template-columns: repeat(3, 1fr); }
