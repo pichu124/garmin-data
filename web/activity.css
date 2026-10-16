@@ -1,1 +1,8 @@
-/* CSS riêng của trang chi tiết hoạt động (view-activity.js). */
+/* CSS riêng của trang chi tiết hoạt động (view-activity.js) + dòng hoạt động bấm được (core.js activityList). */
+button.act:hover { background: var(--line); }
+.back-btn { display: inline-flex; align-items: center; gap: 2px; margin: 0 0 4px -6px; padding: 6px 12px 6px 4px; border-radius: 999px; color: var(--text-2); font-weight: 700; font-size: 14px; }
+.back-btn svg { width: 20px; height: 20px; }
+.back-btn:hover { background: var(--card-2); color: var(--text); }
+.act-name { margin: 0; font-size: 22px; font-weight: 800; }
+.act-meta { margin: 2px 0 14px; color: var(--text-3); font-size: 14px; }
+@media (min-width: 700px) { .tiles.t3 { grid-template-columns: repeat(3, 1fr); } }

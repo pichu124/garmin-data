@@ -9,11 +9,12 @@
 
   // ---------- điều hướng ----------
   function readHash() {
-    const [tab, a, b] = location.hash.replace(/^#/, '').split('/');
+    const [tab, a, b, c] = location.hash.replace(/^#/, '').split('/');
     if (['home', 'trends', 'health', 'journal'].includes(tab)) S.tab = tab;
-    if (S.tab === 'home' && ['overview', 'sleep', 'recovery', 'strain'].includes(a)) S.sub = a;
+    if (S.tab === 'home' && ['overview', 'sleep', 'recovery', 'strain', 'activity'].includes(a)) S.sub = a;
     const date = S.tab === 'home' ? b : a;
     if (date && date in S.idx) S.date = date;
+    S.param = c || null;   // id hoạt động (#home/activity/<ngày>/<id>)
   }
 
   // ---------- khung ----------
@@ -53,6 +54,8 @@
       app.replaceChildren(main);
       return;
     }
+    // id không có trong ngày đang xem (đổi ngày, hash rác) ⇒ về tab Strain của ngày đó
+    if (S.tab === 'home' && S.sub === 'activity' && !(day().activities || []).some(a => a.id === S.param)) { go({ sub: 'strain' }); return; }
     main.append(topbar());
     if (S.staticMode) main.append(h('div', { class: 'sample-note' }, h('span', { text: 'Xem thử · dữ liệu mẫu, không phải số đo thật' })));
     if (S.tab === 'home') main.append(homeTabs());
@@ -106,11 +109,23 @@
     render();
   }
 
+  // ---------- sheet modal (cài đặt, lịch) ----------
+  // app.inert: Tab không lọt ra trang phía sau; chặn phím lan ra document (←/→ ở đó đổi ngày phía sau).
+  // refocus: selector trong app nhận lại focus khi đóng (tra lúc đóng — app có thể đã render lại). Trả về hàm đóng.
+  function openSheet(label, refocus, ...kids) {
+    const back = h('div', { class: 'sheet-backdrop', onclick: e => { if (e.target === back) close(); } },
+      h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': label }, ...kids));
+    const close = () => { back.remove(); app.inert = false; app.querySelector(refocus)?.focus(); };
+    back.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
+    document.body.append(back);
+    app.inert = true;
+    return close;
+  }
+
   // ---------- cài đặt ----------
   function openSettings() {
     const s = (S.summary && S.summary.settings) || {};
     const prof = (S.summary && S.summary.profile) || {};
-    const back = h('div', { class: 'sheet-backdrop', onclick: e => { if (e.target === back) back.remove(); } });
     const f = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label, input), hint ? h('span', { class: 'hint', text: hint }) : null);
     const need = h('input', { type: 'number', step: '0.25', min: '5', max: '11', value: s.sleep_baseline_h ?? 7.75 });
     const hrmax = h('input', { type: 'number', min: '130', max: '230', placeholder: `tự động (${fmt.n(prof.hr_max)})`, value: s.hr_max ?? '' });
@@ -119,26 +134,24 @@
     [need, hrmax, wake, sex].forEach(x => { x.style.display = 'block'; x.style.width = '100%'; x.style.marginTop = '4px'; });
     const msg = h('p', { class: 'note' });
     const days = S.days;
-    back.append(h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Cài đặt' },
+    const close = openSheet('Cài đặt', '.topbar [aria-label="Cài đặt"]',
       h('h2', { text: 'Cài đặt' }),
       f('Nhu cầu ngủ nền (giờ)', need, 'WHOOP mặc định ~7,5–8,5 giờ; tăng nếu ngày ngủ đủ bạn vẫn mệt.'),
       f('Nhịp tim tối đa (bpm)', hrmax, `Dùng cho Strain. Để trống = tự động (hiện ${fmt.n(prof.hr_max)} từ ${prof.hr_max_source || '—'}).`),
       f('Giờ muốn thức dậy', wake, 'Cho Kế hoạch ngủ. Để trống = trung vị giờ dậy 14 đêm gần nhất.'),
       f('Giới tính (hệ số TRIMP)', sex),
       h('div', { class: 'row-btns' },
-        h('button', { class: 'btn ghost', type: 'button', onclick: () => back.remove() }, 'Đóng'),
+        h('button', { class: 'btn ghost', type: 'button', onclick: () => close() }, 'Đóng'),
         h('button', { class: 'btn', type: 'button', disabled: S.staticMode ? true : null, onclick: async () => {
           msg.textContent = 'Đang lưu và tính lại…';
           try {
             await post('api/settings', { sleep_baseline_h: Number(need.value), hr_max: hrmax.value ? Number(hrmax.value) : null, target_wake: wake.value || null, sex: sex.value || null });
-            const cur = S.date; await loadSummary(); S.date = cur; back.remove(); render(); toast('Đã lưu cài đặt ✓');
+            const cur = S.date; await loadSummary(); S.date = cur; render(); close(); toast('Đã lưu cài đặt ✓');
           } catch (e) { msg.textContent = `Lỗi: ${e.message}`; }
         } }, 'Lưu')),
       msg,
       h('p', { class: 'note', text: days.length ? `Dữ liệu: ${days[0].date} → ${days[days.length - 1].date} (${days.length} ngày) · cập nhật ${S.summary.generated_at.replace('T', ' ').slice(0, 16)} UTC` : '' }),
-      h('p', { class: 'note', text: S.staticMode ? 'Đây là bản xem thử với dữ liệu mẫu.' : 'Xem trên điện thoại: chạy `python run.py serve --lan` rồi mở địa chỉ in ra trên cùng Wi-Fi.' })));
-    back.addEventListener('keydown', e => { if (e.key === 'Escape') back.remove(); });
-    document.body.append(back);
+      h('p', { class: 'note', text: S.staticMode ? 'Đây là bản xem thử với dữ liệu mẫu.' : 'Xem trên điện thoại: chạy `python run.py serve --lan` rồi mở địa chỉ in ra trên cùng Wi-Fi.' }));
     need.focus();
   }
 
@@ -147,8 +160,6 @@
     let [y, mo] = S.date.split('-').map(Number);
     const first = S.days[0].date.slice(0, 7), last = S.days[S.days.length - 1].date.slice(0, 7);
     const ym = () => `${y}-${String(mo).padStart(2, '0')}`;
-    const back = h('div', { class: 'sheet-backdrop', onclick: e => { if (e.target === back) close(); } });
-    const close = () => { back.remove(); app.inert = false; app.querySelector('.datebar .label')?.focus(); };
     const prevBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Tháng trước', onclick: () => shift(-1) }, icon('left'));
     const nextBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Tháng sau', onclick: () => shift(1) }, icon('right'));
     const title = h('h2', { 'aria-live': 'polite' });
@@ -177,14 +188,10 @@
       grid.replaceChildren(...cells);
     }
     const legend = [[C.green, 'Hồi phục tốt'], [C.yellow, 'Hồi phục vừa'], [C.red, 'Cần nghỉ ngơi'], [null, 'Chưa có điểm']];
-    back.append(h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Chọn ngày' },
+    const close = openSheet('Chọn ngày', '.datebar .label',
       h('div', { class: 'cal-head' }, prevBtn, title, nextBtn), grid,
       h('div', { class: 'legend l4 cal-legend' }, legend.map(([c, k]) => h('div', { class: 'item' }, h('span', { class: 'sw', style: { borderColor: c } }), h('span', { class: 'k', text: k })))),
-      h('div', { class: 'row-btns' }, h('button', { class: 'btn ghost', type: 'button', onclick: close }, 'Đóng'))));
-    // chặn phím lan ra document: ←/→ ở đó đổi ngày phía sau lịch
-    back.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
-    document.body.append(back);
-    app.inert = true;   // modal thật: Tab không lọt ra trang phía sau
+      h('div', { class: 'row-btns' }, h('button', { class: 'btn ghost', type: 'button', onclick: () => close() }, 'Đóng')));
     paint();
     grid.querySelector('[aria-current=date]').focus();
   }

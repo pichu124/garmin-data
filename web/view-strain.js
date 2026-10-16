@@ -56,4 +56,5 @@
   }
 
   views.strain = viewStrain;
+  window.GHA.zonesCard = zonesCard;   // trang hoạt động dùng lại
 })();

@@ -35,6 +35,7 @@
   const S = {
     summary: null, days: [], idx: {}, details: new Map(),
     date: null, tab: 'home', sub: 'overview', range: 30,
+    param: null, backSub: 'strain',   // trang hoạt động: id hoạt động, tab mà nút quay lại trở về
     staticMode: !!window.GH_DATA, sync: null,
   };
   // hàm vẽ chờ chạy sau khi node đã vào DOM (biểu đồ cần đo kích thước); render lấy ra bằng takeMounts
@@ -131,6 +132,7 @@
     const parts = [S.tab];
     if (S.tab === 'home') parts.push(S.sub);
     if (S.tab !== 'trends' && S.date) parts.push(S.date);
+    if (S.tab === 'home' && S.sub === 'activity') parts.push(S.param);
     const hash = '#' + parts.join('/');
     try { if (location.hash !== hash) history.replaceState(null, '', hash); } catch (e) { /* khung nhúng có thể chặn */ }
     GHA.render();
@@ -163,7 +165,7 @@
         h('div', { class: 'right' }, h('div', { text: fmt.dur(sl.hours) }), h('div', { class: 'muted', text: 'giờ ngủ' }))));
     }
     for (const a of d.activities || []) {
-      rows.push(h('div', { class: 'act' },
+      rows.push(h('button', { class: 'act', type: 'button', onclick: () => go({ backSub: S.sub, sub: 'activity', param: a.id }) },
         h('div', { class: `badge ${isNum(a.strain) ? 'strain' : 'none'}`, text: isNum(a.strain) ? fmt.n(a.strain, 1) : '—' }),
         h('div', {}, h('div', { class: 'title', text: actName(a) }),
           h('div', { class: 'meta', text: [a.start, `${a.duration_min} phút`, a.distance_km ? `${fmt.n(a.distance_km, 2)} km` : null].filter(Boolean).join(' · ') })),
@@ -197,6 +199,7 @@
     day, val, isNum, prevAvg, trendBadge, dateLabel, zoneOf, actName, card, chartCard, tableOf, lastN, tile, go,
     recoveryRing, strainRing, sleepRing, activityList, hrCard, vitalLine,
     render: null,   // app.js gán
-    views: {},      // view-*.js đăng ký: views[key] = d => mảng node (key: overview, sleep, recovery, strain, trends, health, journal)
+    views: {},      // view-*.js đăng ký: views[key] = d => mảng node (key: overview, sleep, recovery, strain, activity, trends, health, journal)
+    zonesCard: null,   // view-strain.js gán; view-activity.js dùng lại
   };
 })();
