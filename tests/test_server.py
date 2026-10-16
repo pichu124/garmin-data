@@ -4,11 +4,10 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 
 import pytest
 
-from garmin_health.server import App, make_handler
+from garmin_health.server import App, Server, make_handler
 
 
 @pytest.fixture()
@@ -27,7 +26,7 @@ def server(demo_summary, tmp_path):
         return {"error_count": 0}
 
     app = App(paths, sync_fn=fake_sync, build_fn=lambda: builds.append(1))
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app, allow_lan=False))
+    httpd = Server(("127.0.0.1", 0), make_handler(app, allow_lan=False))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}", paths, builds
     httpd.shutdown()

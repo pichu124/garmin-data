@@ -213,10 +213,16 @@ def make_handler(app: App, *, allow_lan: bool):
     return Handler
 
 
+class Server(ThreadingHTTPServer):
+    # trang nạp ~16 file cùng lúc; hàng đợi mặc định 5 làm Windows từ chối kết nối (ERR_CONNECTION_REFUSED)
+    request_queue_size = 64
+    daemon_threads = True
+
+
 def serve(paths: Paths, *, host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False) -> None:
     app = App(paths)
     allow_lan = host not in ("127.0.0.1", "localhost")
-    httpd = ThreadingHTTPServer((host, port), make_handler(app, allow_lan=allow_lan))
+    httpd = Server((host, port), make_handler(app, allow_lan=allow_lan))
     url = f"http://{'127.0.0.1' if not allow_lan else _lan_ip()}:{port}/"
     print(f"[serve] Mở {url}  (Ctrl+C để dừng)")
     if allow_lan:
