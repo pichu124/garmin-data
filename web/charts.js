@@ -1,6 +1,6 @@
 /* Biểu đồ SVG tự vẽ (không thư viện ngoài ⇒ chạy offline) cho Garmin Health.
  * Quy ước mark (dataviz): cột ≤24px bo 4px đầu dữ liệu, line 2px, lưới hairline,
- * tooltip dùng textContent (nhãn là dữ liệu ngoài), mỗi biểu đồ có bảng thay thế ở app.js. */
+ * tooltip dùng textContent (nhãn là dữ liệu ngoài), mỗi biểu đồ có bảng thay thế (tableOf) ở view-*.js. */
 (function () {
   'use strict';
   const NS = 'http://www.w3.org/2000/svg';
@@ -88,6 +88,8 @@
   }
 
   // ---------- vòng (dial) kiểu WHOOP ----------
+  // vòng chạy từ 0 khi vẽ (CSS .ring-anim); vòng đã chạy (cùng màu/giá trị/cỡ) thì vẽ lại không chạy nữa
+  const ringSeen = new Set();   // ponytail: lớn dần theo số vòng khác nhau đã xem — vài trăm phần tử là cùng
   function ring({ frac, color, text, unit, sub, size = 132, stroke = 11, band }) {
     const c = size / 2, r = c - stroke / 2 - 4;
     const C = 2 * Math.PI * r;
@@ -99,8 +101,11 @@
       g.append(svg('circle', { cx: c, cy: c, r: rb, fill: 'none', stroke: '#e2e8f0', 'stroke-opacity': 0.75, 'stroke-width': 3,
         'stroke-dasharray': `${(band[1] - band[0]) * Cb} ${Cb}`, 'stroke-dashoffset': -band[0] * Cb, transform: `rotate(-90 ${c} ${c})`, 'stroke-linecap': 'round' }));
     }
+    const seen = `${color}|${f}|${size}`;
     if (f > 0) g.append(svg('circle', { cx: c, cy: c, r, fill: 'none', stroke: color, 'stroke-width': stroke, 'stroke-linecap': 'round',
-      'stroke-dasharray': `${f * C} ${C}`, transform: `rotate(-90 ${c} ${c})` }));
+      'stroke-dasharray': `${C} ${C}`, 'stroke-dashoffset': (1 - f) * C, transform: `rotate(-90 ${c} ${c})`,
+      class: ringSeen.has(seen) ? null : 'ring-anim', style: `--ring-c:${C}` }));
+    ringSeen.add(seen);
     const big = size * 0.27;
     const t = svg('text', { x: c, y: c + big * 0.35 - (sub ? size * 0.05 : 0), 'text-anchor': 'middle', class: 'ring-value', 'font-size': big },
       text, unit ? svg('tspan', { class: 'ring-unit', 'font-size': big * 0.45, dx: 1 }, unit) : null);
@@ -127,10 +132,23 @@
       g.append(svg('line', { x1: pad.l, x2: W - pad.r, y1: y(t), y2: y(t), class: 'grid-line' }));
       g.append(svg('text', { x: pad.l - 6, y: y(t) + 4, 'text-anchor': 'end', class: 'axis-text' }, fmtY(t)));
     }
+    // dải mục tiêu [lo,hi]: một khối bậc thang liền qua các slot, ngắt ở ngày thiếu, viền mảnh trên/dưới
+    const X = i => pad.l + slot * i;
+    const step = (run, k) => run.map((i, j) => `${j ? 'V' : `M${X(i)},`}${y(data[i].band[k])}H${X(i + 1)}`).join('');
+    let run = [];
+    const flushBand = () => {
+      if (run.length) {
+        const back = run.slice().reverse().map(i => `V${y(data[i].band[0])}H${X(i)}`).join('');
+        g.append(svg('path', { d: `${step(run, 1)}${back}Z`, fill: '#3aa7f0', 'fill-opacity': 0.14 }),
+          svg('path', { d: step(run, 1) + step(run, 0), fill: 'none', stroke: '#3aa7f0', 'stroke-opacity': 0.6, 'stroke-width': 1 }));
+      }
+      run = [];
+    };
+    data.forEach((d, i) => { if (d.band) run.push(i); else flushBand(); });
+    flushBand();
     const every = Math.max(1, Math.ceil(data.length / Math.floor(pw / 34)));
     data.forEach((d, i) => {
       const cx = pad.l + slot * i + slot / 2;
-      if (d.band) g.append(svg('rect', { x: cx - bw / 2 - 2, width: bw + 4, y: y(d.band[1]), height: Math.max(1, y(d.band[0]) - y(d.band[1])), rx: 3, fill: '#3aa7f0', 'fill-opacity': 0.18 }));
       if (d.value !== null && d.value !== undefined) {
         const p = barPath(cx - bw / 2, y(yMin), bw, y(Math.max(yMin, d.value)));
         if (p) g.append(svg('path', { d: p, fill: d.color, class: `bar-mark${d.key === highlight ? ' active' : ''}`, 'fill-opacity': highlight && d.key !== highlight ? 0.55 : 1 }));
@@ -215,15 +233,17 @@
   }
 
   // ---------- nhịp tim trong ngày ----------
-  function hrChart(container, { detail, height = 190, colorLine = '#e6ebef' }) {
+  // from/to: khung giờ cần vẽ, phút kể từ nửa đêm địa phương (âm = tối hôm trước); mặc định cả ngày
+  function hrChart(container, { detail, height = 190, colorLine = '#e6ebef', from = 0, to = 1440 }) {
     const W = width(container), H = height;
     const pad = { l: 30, r: 8, t: 22, b: 22 };
     const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
-    const pts = detail.hr || [];
+    const pts = (detail.hr || []).filter(p => p[0] >= from && p[0] <= to);
     if (!pts.length) { container.replaceChildren(h('p', { class: 'muted', text: 'Không có dữ liệu nhịp tim ngày này.' })); return; }
     const vals = pts.map(p => p[1]);
     const lo = Math.max(30, Math.floor((Math.min(...vals) - 5) / 10) * 10), hi = Math.ceil((Math.max(...vals) + 5) / 10) * 10;
-    const x = m => pad.l + (m / 1440) * pw;
+    const span = to - from;
+    const x = m => pad.l + ((m - from) / span) * pw;
     const y = v => pad.t + ph - ((v - lo) / (hi - lo)) * ph;
     const g = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img' });
     for (const t of niceTicks(lo, hi, 3)) {
@@ -235,13 +255,13 @@
     if (detail.sleep) nights.push([detail.sleep.start_min, detail.sleep.end_min]);
     if (detail.next_sleep_start_min !== null && detail.next_sleep_start_min !== undefined) nights.push([detail.next_sleep_start_min, 1440]);
     for (const [s, e] of nights) {
-      const a = Math.max(0, s), b = Math.min(1440, e);
+      const a = Math.max(from, s), b = Math.min(to, e);
       if (b <= a) continue;
       g.append(svg('rect', { x: x(a), y: pad.t, width: x(b) - x(a), height: ph, fill: '#a5b4fc', 'fill-opacity': 0.1 }));
       if (x(b) - x(a) > 30) g.append(svg('text', { x: x(a) + 4, y: pad.t - 6, class: 'axis-text' }, 'Ngủ'));
     }
     for (const a of detail.activities || []) {
-      const s = Math.max(0, a.start_min), e = Math.min(1440, a.end_min);
+      const s = Math.max(from, a.start_min), e = Math.min(to, a.end_min);
       if (e <= s) continue;
       g.append(svg('rect', { x: x(s), y: pad.t, width: Math.max(2, x(e) - x(s)), height: ph, fill: '#0a84d6', 'fill-opacity': 0.22 }));
       if (a.strain !== null && a.strain !== undefined) g.append(svg('text', { x: x(s), y: pad.t - 6, class: 'axis-text', style: 'fill:#3aa7f0;font-weight:700' }, fmt.n(a.strain, 1)));
@@ -249,14 +269,19 @@
     let path = '', prev = null;
     for (const [m, v] of pts) { path += `${prev !== null && m - prev <= 10 ? 'L' : 'M'}${x(m).toFixed(1)},${y(v).toFixed(1)}`; prev = m; }
     g.append(svg('path', { d: path, fill: 'none', stroke: colorLine, 'stroke-width': 1.5, 'stroke-linejoin': 'round', 'stroke-opacity': 0.9 }));
-    for (const hh of [0, 6, 12, 18, 24]) g.append(svg('text', { x: x(hh * 60), y: H - 6, 'text-anchor': hh === 0 ? 'start' : hh === 24 ? 'end' : 'middle', class: 'axis-text' }, `${String(hh).padStart(2, '0')}:00`));
+    // trục giờ: cả ngày mỗi 6 giờ; khung ngắn chọn bước để nhãn cách nhau ≥ ~56px
+    const stepM = span >= 1440 ? 360 : [5, 10, 15, 30, 60, 120, 180, 360].find(s => (pw * s) / span >= 56) || 360;
+    for (let m = Math.ceil(from / stepM) * stepM; m <= to; m += stepM) {
+      const xm = x(m);
+      g.append(svg('text', { x: xm, y: H - 6, 'text-anchor': xm - pad.l < 18 ? 'start' : W - pad.r - xm < 18 ? 'end' : 'middle', class: 'axis-text' }, m === 1440 ? '24:00' : fmt.clock(m)));
+    }
     const cross = svg('line', { y1: pad.t, y2: pad.t + ph, stroke: '#7d8a93', 'stroke-width': 1, visibility: 'hidden' });
     const dot = svg('circle', { r: 4, fill: colorLine, stroke: '#161f24', 'stroke-width': 2, visibility: 'hidden' });
     g.append(cross, dot);
     const hit = svg('rect', { x: pad.l, y: pad.t, width: pw, height: ph, class: 'hit' });
     hit.addEventListener('pointermove', e => {
       const r = g.getBoundingClientRect();
-      const m = (((e.clientX - r.left) * (W / r.width)) - pad.l) / pw * 1440;
+      const m = from + (((e.clientX - r.left) * (W / r.width)) - pad.l) / pw * span;
       let best = pts[0];
       for (const p of pts) if (Math.abs(p[0] - m) < Math.abs(best[0] - m)) best = p;
       cross.setAttribute('x1', x(best[0])); cross.setAttribute('x2', x(best[0])); cross.setAttribute('visibility', 'visible');

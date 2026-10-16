@@ -107,6 +107,8 @@ a { color: var(--strain-hi); }
 .ring-value { font-weight: 800; fill: var(--text); }
 .ring-unit { font-weight: 700; fill: var(--text-2); }
 .ring-sub { fill: var(--text-3); font-weight: 600; letter-spacing: .06em; }
+.ring-anim { animation: ring-fill .6s ease-out; }   /* reduced-motion: tắt bởi luật chung cuối file */
+@keyframes ring-fill { from { stroke-dashoffset: var(--ring-c); } }
 
 .hero { display: grid; justify-items: center; text-align: center; padding: 6px 0 4px; }
 .hero svg { width: 220px; max-width: 70vw; height: auto; overflow: visible; }
