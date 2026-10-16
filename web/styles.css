@@ -63,7 +63,6 @@ a { color: var(--strain-hi); }
 .datebar { display: flex; align-items: center; justify-content: center; gap: 4px; }
 .datebar .label { min-width: 132px; text-align: center; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 14px; position: relative; }
 .datebar .label small { display: block; font-weight: 500; letter-spacing: .02em; text-transform: none; color: var(--text-3); font-size: 12px; }
-.datebar input[type=date] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .datebar .icon-btn[disabled] { opacity: .25; pointer-events: none; }
 
 .tabs { display: flex; gap: 4px; background: var(--card); border-radius: 999px; padding: 4px; margin: 4px 0 18px; overflow-x: auto; scrollbar-width: none; }
