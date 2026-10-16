@@ -87,14 +87,14 @@ def tz_offset_ms(*raws: Any) -> int | None:
     return None
 
 
-def series(rows: Any, value_index: int = 1) -> list[tuple[int, float]]:
-    """[[ts, v], …] → [(ts, v)] bỏ điểm None/≤0, sắp theo thời gian."""
+def series(rows: Any, value_index: int = 1, *, keep_zero: bool = False) -> list[tuple[int, float]]:
+    """[[ts, v], …] → [(ts, v)] bỏ điểm None/≤0 (giữ 0 nếu keep_zero), sắp theo thời gian."""
     out = []
     for row in rows or []:
         if not isinstance(row, (list, tuple)) or len(row) <= value_index:
             continue
-        t, v = parse_ts(row[0]), pos(row[value_index])
-        if t is not None and v is not None:
+        t, v = parse_ts(row[0]), num(row[value_index])
+        if t is not None and v is not None and (v > 0 or (keep_zero and v == 0)):
             out.append((t, v))
     out.sort()
     return out
@@ -217,7 +217,7 @@ def stress(raw: Any) -> dict:
         if t is not None and v is not None and v >= 0:
             bb.append((t, v))
     bb.sort()
-    return {"stress": series(raw.get("stressValuesArray")), "body_battery": bb}
+    return {"stress": series(raw.get("stressValuesArray"), keep_zero=True), "body_battery": bb}   # stress 0 = nghỉ hợp lệ; -1/-2 = không đo
 
 
 STRESS_STEP_S = 180      # Garmin ghi stress mỗi 3 phút

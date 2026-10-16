@@ -242,7 +242,7 @@
     if (!pts.length) { container.replaceChildren(h('p', { class: 'muted', text: 'Không có dữ liệu nhịp tim ngày này.' })); return; }
     const vals = pts.map(p => p[1]);
     const lo = Math.max(30, Math.floor((Math.min(...vals) - 5) / 10) * 10), hi = Math.ceil((Math.max(...vals) + 5) / 10) * 10;
-    const span = to - from;
+    const span = Math.max(1, to - from);   // hoạt động < 1 phút: tránh chia 0
     const x = m => pad.l + ((m - from) / span) * pw;
     const y = v => pad.t + ph - ((v - lo) / (hi - lo)) * ph;
     const g = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img' });

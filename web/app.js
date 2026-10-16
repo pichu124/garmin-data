@@ -111,10 +111,11 @@
 
   // ---------- sheet modal (cài đặt, lịch) ----------
   // app.inert: Tab không lọt ra trang phía sau; chặn phím lan ra document (←/→ ở đó đổi ngày phía sau).
+  // tabindex -1: bấm chỗ trống trong sheet giữ focus trong sheet (không rơi về body làm phím lọt ra).
   // refocus: selector trong app nhận lại focus khi đóng (tra lúc đóng — app có thể đã render lại). Trả về hàm đóng.
   function openSheet(label, refocus, ...kids) {
     const back = h('div', { class: 'sheet-backdrop', onclick: e => { if (e.target === back) close(); } },
-      h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': label }, ...kids));
+      h('div', { class: 'sheet', tabindex: '-1', role: 'dialog', 'aria-modal': 'true', 'aria-label': label }, ...kids));
     const close = () => { back.remove(); app.inert = false; app.querySelector(refocus)?.focus(); };
     back.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
     document.body.append(back);
