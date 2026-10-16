@@ -72,9 +72,16 @@ Sinh 150 ngày dữ liệu giả **đúng định dạng JSON của Garmin** và
   kế hoạch ngủ đêm nay, giờ ngủ vs nhu cầu 30 ngày.
 - **Hồi phục**: "vì sao hôm nay như vậy" — mỗi chỉ số cộng/trừ bao nhiêu điểm;
   HRV / nhịp tim nghỉ / nhịp thở với dải ngưỡng bình thường.
-- **Strain**: thời gian trong 5 vùng tim, strain từng hoạt động, 30 ngày với vùng tối ưu.
+- **Strain**: thời gian ở mức Nhẹ + 5 vùng tim, "nguồn strain" (% tải theo mức),
+  strain từng hoạt động, 30 ngày với dải strain tối ưu.
+- **Chi tiết hoạt động** (bấm vào một hoạt động): vòng strain, thời lượng, calo,
+  quãng đường, HR TB/max, Training Effect, nhịp tim trong lúc tập, vùng tim.
+- **Sức khoẻ**: Health Monitor (HRV, RHR, nhịp thở, SpO2 so với ngưỡng của bạn —
+  lệch theo hướng tốt vẫn tính là ổn), **Stress Monitor** (stress Garmin trong ngày
+  tô theo mức nghỉ / thấp / vừa / cao + số giờ mỗi mức so với 30 ngày), chỉ số riêng của Garmin.
 - **Xu hướng**, **Sức khoẻ**, **Nhật ký** ở thanh dưới.
-- Phím ← → để chuyển ngày; mỗi biểu đồ có nút **Bảng** để xem số liệu dạng bảng.
+- Bấm nhãn ngày ở trên cùng để mở **lịch tháng** (mỗi ngày tô màu theo hồi phục);
+  phím ← → để chuyển ngày; mỗi biểu đồ có nút **Bảng** để xem số liệu dạng bảng.
 - ⚙ **Cài đặt**: nhu cầu ngủ nền, nhịp tim tối đa, giờ muốn dậy.
 
 ## Dữ liệu nằm ở đâu
@@ -130,7 +137,7 @@ tối đa 1h30) − ngủ trưa.
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest -q          # 46 test, ~12 giây, không cần mạng/Garmin
+python -m pytest -q          # 67 test, ~1–2 phút, không cần mạng/Garmin
 ```
 
 Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ SVG tự vẽ
@@ -146,4 +153,5 @@ Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ 
 | `garmin_health/insights.py` | nhật ký, tổng kết tuần |
 | `garmin_health/demo.py` | sinh dữ liệu mẫu đúng định dạng Garmin |
 | `garmin_health/server.py` | web server + API đồng bộ / nhật ký / cài đặt |
-| `web/` | giao diện |
+| `web/` | giao diện: `app.js` khung + router, `core.js` tiện ích chung, `view-*.js` từng màn hình, `charts.js` biểu đồ SVG |
+| `scripts/shots.py` | chụp mọi màn hình 390px + 1280px (cần `pip install playwright`, dùng Chrome/Edge có sẵn) |
