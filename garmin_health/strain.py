@@ -9,7 +9,7 @@ chạy 60' vừa sức ≈ 12–14, 2,5h cường độ cao ≈ 18–19.
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from typing import NamedTuple, Sequence
 
 STRAIN_MAX = 21.0
 STRAIN_K = 176.0
@@ -48,6 +48,13 @@ def zone_of(x: float) -> int:
     return z
 
 
+class CardioLoad(NamedTuple):
+    load: float                 # tải TRIMP
+    zones: list[float]          # phút trong vùng 0..5 (0 = dưới Vùng 1)
+    light_min: float            # phút ở 20–50% HRR: có tải nhưng dưới Vùng 1
+    load_by_zone: list[float]   # tải theo vùng 0..5 — vùng 0 chính là phần "nhẹ"
+
+
 def cardio_load(
     samples: Sequence[tuple[int, float]],
     *,
@@ -56,11 +63,12 @@ def cardio_load(
     sex: str | None = None,
     t0: int | None = None,
     t1: int | None = None,
-) -> tuple[float, list[float]]:
-    """(tải TRIMP, phút trong vùng 0..5) cho mẫu HR nằm trong [t0, t1)."""
+) -> CardioLoad:
+    """Tải tim mạch của các mẫu HR nằm trong [t0, t1)."""
     pts = [(t, hr) for t, hr in samples if (t0 is None or t >= t0) and (t1 is None or t < t1)]
     zones = [0.0] * 6
-    load = 0.0
+    by_zone = [0.0] * 6
+    light = 0.0
     for i, (t, hr) in enumerate(pts):
         if i + 1 < len(pts):
             step = (pts[i + 1][0] - t) / 1000
@@ -72,9 +80,12 @@ def cardio_load(
             step = min(step, max(0.0, (t1 - t) / 1000))
         minutes = step / 60
         x = hrr_fraction(hr, rhr, hr_max)
-        load += trimp_per_min(x, sex) * minutes
-        zones[zone_of(x)] += minutes
-    return load, zones
+        z = zone_of(x)
+        by_zone[z] += trimp_per_min(x, sex) * minutes
+        zones[z] += minutes
+        if z == 0 and x > FLOOR_LO:
+            light += minutes
+    return CardioLoad(sum(by_zone), zones, light, by_zone)
 
 
 def strain_from_load(load: float) -> float:

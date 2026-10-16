@@ -126,11 +126,20 @@ def _sleep_block(s: dict, tz: int) -> dict:
     }
 
 
+def _load_fields(c: st.CardioLoad) -> dict:
+    """Phút Vùng 1–5, phút "nhẹ" (20–50% HRR) và % tải [nhẹ, Z1..Z5] — tổng đúng 100."""
+    pct = None
+    if c.load > 0:
+        pct = [round(100 * x / c.load) for x in c.load_by_zone]
+        pct[pct.index(max(pct))] += 100 - sum(pct)   # sai số làm tròn dồn vào phần lớn nhất
+    return {"zones_min": [round(z) for z in c.zones[1:]], "light_min": round(c.light_min), "load_pct": pct}
+
+
 def _activity_block(act: dict, samples, *, rhr: float, profile: dict, day_local: int) -> dict:
     t0 = act["start"]
     t1 = t0 + int(act["duration_s"] * 1000)
     start_min = round((act["start_local"] - day_local) / 60000, 1)   # theo giờ Local của chính hoạt động
-    load, zones = st.cardio_load(samples, rhr=rhr, hr_max=profile["hr_max"], sex=profile["sex"], t0=t0, t1=t1)
+    c = st.cardio_load(samples, rhr=rhr, hr_max=profile["hr_max"], sex=profile["sex"], t0=t0, t1=t1)
     return {
         "id": act["id"],
         "name": act["name"],
@@ -139,8 +148,8 @@ def _activity_block(act: dict, samples, *, rhr: float, profile: dict, day_local:
         "start_min": start_min,
         "end_min": round(start_min + act["duration_s"] / 60, 1),
         "duration_min": round(act["duration_s"] / 60),
-        "strain": st.strain_from_load(load) if load > 0 else None,
-        "zones_min": [round(z) for z in zones[1:]],
+        "strain": st.strain_from_load(c.load) if c.load > 0 else None,
+        **_load_fields(c),
         "avg_hr": _r(act["avg_hr"]),
         "max_hr": _r(act["max_hr"]),
         "calories": _r(act["calories"]),
@@ -169,15 +178,23 @@ def compute_days(norm: dict[str, dict], acts_by_day: dict[str, list[dict]], prof
         hrv = n["hrv"]["last_night"] or (s or {}).get("hrv")
         resp = (s or {}).get("resp")
         spo2 = (s or {}).get("spo2")
-        rhr_for_load = rhr or last_rhr or FALLBACK_RHR
+        # baseline 30 ngày TRƯỚC hôm nay — dùng cho Recovery và cho %HRR của Strain
+        bases = {
+            "hrv_ln": baseline(window(hist["hrv"], i), sd_floor=rec.SD_FLOORS["hrv_ln"], transform=_ln),
+            "rhr": baseline(window(hist["rhr"], i), sd_floor=rec.SD_FLOORS["rhr"]),
+            "resp": baseline(window(hist["resp"], i), sd_floor=rec.SD_FLOORS["resp"]),
+            "spo2": baseline(window(hist["spo2"], i), sd_floor=rec.SD_FLOORS["spo2"]),
+        }
+        # RHR nền, không phải RHR đêm qua: một đêm RHR thấp không được thổi phồng strain cả ngày
+        rhr_for_load = bases["rhr"].mean if bases["rhr"] else (rhr or last_rhr or FALLBACK_RHR)
         last_rhr = rhr or last_rhr
 
         # --- Strain ---
         samples = n["hr"]["samples"]
         strain_block = None
         if samples:
-            load, zones = st.cardio_load(samples, rhr=rhr_for_load, hr_max=profile["hr_max"], sex=profile["sex"], t0=day0, t1=day0 + DAY_MS)
-            strain_block = {"score": st.strain_from_load(load), "load": round(load, 1), "zones_min": [round(z) for z in zones[1:]]}
+            c = st.cardio_load(samples, rhr=rhr_for_load, hr_max=profile["hr_max"], sex=profile["sex"], t0=day0, t1=day0 + DAY_MS)
+            strain_block = {"score": st.strain_from_load(c.load), "load": round(c.load, 1), **_load_fields(c)}
         # hoạt động vắt qua nửa đêm cần cả mẫu HR của ngày sau
         next_samples = norm[dates[i + 1]]["hr"]["samples"] if i + 1 < len(dates) else []
         act_samples = samples + next_samples
@@ -220,12 +237,6 @@ def compute_days(norm: dict[str, dict], acts_by_day: dict[str, list[dict]], prof
                                end_min=_minute_of(s["end"], stz, day_local))
 
         # --- Recovery: so với baseline 30 ngày TRƯỚC hôm nay ---
-        bases = {
-            "hrv_ln": baseline(window(hist["hrv"], i), sd_floor=rec.SD_FLOORS["hrv_ln"], transform=_ln),
-            "rhr": baseline(window(hist["rhr"], i), sd_floor=rec.SD_FLOORS["rhr"]),
-            "resp": baseline(window(hist["resp"], i), sd_floor=rec.SD_FLOORS["resp"]),
-            "spo2": baseline(window(hist["spo2"], i), sd_floor=rec.SD_FLOORS["spo2"]),
-        }
         recovery = None
         if hrv is not None or s is not None:
             recovery = rec.compute(hrv=hrv, rhr=rhr if s or hrv else None,
@@ -250,7 +261,8 @@ def compute_days(norm: dict[str, dict], acts_by_day: dict[str, list[dict]], prof
             "garmin": {
                 "bb_high": _r(summ["bb_high"]), "bb_low": _r(summ["bb_low"]),
                 "bb_charged": _r(summ["bb_charged"]), "bb_drained": _r(summ["bb_drained"]),
-                "stress_avg": _r(summ["stress_avg"]), "readiness": _r(n["readiness"]["score"]),
+                "stress_avg": _r(summ["stress_avg"]), "stress_min": nz.stress_minutes(n["stress"]["stress"]),
+                "readiness": _r(n["readiness"]["score"]),
                 "readiness_level": n["readiness"]["level"], "hrv_status": n["hrv"]["status"],
                 "hrv_weekly": _r(n["hrv"]["weekly"]), "vo2max": last_vo2,
                 "sleep_score": (sleep_block or {}).get("garmin_score"), "intensity_min": _r(summ["intensity_min"]),
