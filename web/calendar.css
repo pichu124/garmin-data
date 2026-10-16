@@ -1,1 +1,14 @@
-/* CSS riêng của lịch tháng (app.js). */
+/* CSS riêng của lịch tháng (app.js). Khung dùng lại .sheet của cài đặt. */
+.datebar button.label { border-radius: 10px; padding: 2px 8px; }
+.datebar button.label:hover { background: var(--card-2); }
+.cal-head { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; margin-bottom: 10px; }
+.cal-head h2 { margin: 0; text-align: center; font-size: 16px; }
+.cal-head .icon-btn[disabled] { opacity: .25; pointer-events: none; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; justify-items: center; margin-bottom: 14px; }
+.cal-grid .wd { font-size: 11px; font-weight: 700; color: var(--text-3); }
+/* vòng màu = vùng recovery (màu inline); xám = có dữ liệu nhưng chưa có điểm */
+.cal-day, .cal-legend .sw { border: 2px solid var(--text-3); border-radius: 50%; }
+.cal-day { width: 40px; height: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-day:hover { background: var(--card-2); }
+.cal-day[disabled] { border-color: transparent; color: var(--text-3); opacity: .45; cursor: default; background: none; }
+.cal-day[aria-current=date] { background: var(--text); color: #0b1013; }
