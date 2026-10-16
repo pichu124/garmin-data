@@ -56,6 +56,18 @@ def test_serves_ui_and_data(server):
     assert status == 200 and req(f"{base}/data/days/{day}.json")[0] == 200
 
 
+def test_index_assets_are_served(server):
+    import re
+
+    base, _, _ = server
+    html = req(base + "/")[1].decode("utf-8")
+    scripts = re.findall(r'<script src="([^"]+)"', html)
+    assert scripts[:2] == ["charts.js", "core.js"] and scripts[-1] == "app.js"
+    assert "styles.css" in re.findall(r'href="([^"]+)"', html)
+    for path in re.findall(r'(?:src|href)="([^"]+)"', html):
+        assert req(f"{base}/{path}")[0] == 200, path
+
+
 @pytest.mark.parametrize("path", ["/data/days/../../settings.json", "/../run.py", "/data/raw/_sync.json", "/%2e%2e/run.py", "/journal.json"])
 def test_blocks_unknown_paths(server, path):
     base, _, _ = server
