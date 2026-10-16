@@ -47,18 +47,19 @@
       ['Nhịp tim nghỉ', val(d, 'vitals', 'rhr'), 'bpm', x => val(x, 'vitals', 'rhr'), false, 0],
       ['Nhịp thở', val(d, 'vitals', 'resp'), 'lần/ph', x => val(x, 'vitals', 'resp'), null, 1],
       ['Giờ ngủ', val(d, 'sleep', 'hours'), 'h', x => val(x, 'sleep', 'hours'), true, 'dur'],
-      ['Calories', val(d, 'strain', 'calories'), 'kcal', x => (x.partial ? null : val(x, 'strain', 'calories')), null, 0],
-      ['Số bước', val(d, 'strain', 'steps'), '', x => (x.partial ? null : val(x, 'strain', 'steps')), true, 0],
+      ['Calories', val(d, 'strain', 'calories'), 'kcal', x => (x.partial ? null : val(x, 'strain', 'calories')), null, 0, true],
+      ['Số bước', val(d, 'strain', 'steps'), '', x => (x.partial ? null : val(x, 'strain', 'steps')), true, 0, true],
       ['Body Battery cao nhất', val(d, 'garmin', 'bb_high'), '', x => val(x, 'garmin', 'bb_high'), true, 0],
     ];
-    const rows = items.map(([label, v, unit, get, up, dec]) => {
+    // cumulative: số cộng dồn trong ngày — hôm nay đang dở thì so với cả ngày TB30 là sai, bỏ mũi tên
+    const rows = items.map(([label, v, unit, get, up, dec, cumulative]) => {
       const avg = prevAvg(i, get);
       const show = dec === 'dur' ? fmt.dur(v) : fmt.n(v, dec);
       const showAvg = dec === 'dur' ? fmt.dur(avg) : fmt.n(avg, dec);
       return h('div', { class: 'stat-row' },
         h('span', { class: 'label', text: label }),
         h('span', { class: 'value' }, show, unit && isNum(v) ? h('small', { text: unit }) : null),
-        h('span', { class: 'base' }, trendBadge(v, avg, up, dec === 'dur' ? 1 : dec), h('br'), `TB30: ${showAvg}`));
+        h('span', { class: 'base' }, cumulative && d.partial ? h('span', { class: 'trend flat', text: 'đến hiện tại' }) : trendBadge(v, avg, up, dec === 'dur' ? 1 : dec), h('br'), `TB30: ${showAvg}`));
     });
     return card('Chỉ số chính', 'So với trung bình 30 ngày trước', h('div', { class: 'stats' }, rows));
   }
