@@ -4,7 +4,7 @@
   'use strict';
   const { h, fmt, tip } = window.GH;
   const GHA = window.GHA;
-  const { S, icon, go, day, dateLabel, isNum, post, loadSummary, setSummary, takeMounts } = GHA;
+  const { S, C, icon, go, day, dateLabel, zoneOf, isNum, post, loadSummary, setSummary, takeMounts } = GHA;
   const app = document.getElementById('app');
 
   // ---------- điều hướng ----------
@@ -23,11 +23,11 @@
     const syncBtn = h('button', { class: `icon-btn${S.sync && S.sync.running ? ' spinning' : ''}`, type: 'button', title: 'Đồng bộ Garmin', 'aria-label': 'Đồng bộ Garmin', onclick: startSync }, icon('sync'));
     let mid = h('div', { class: 'datebar' }, h('div', { class: 'label', text: S.tab === 'trends' ? 'Xu hướng' : 'Garmin Health' }));
     if (showDate) {
-      const picker = h('input', { type: 'date', 'aria-label': 'Chọn ngày', value: S.date, min: S.days[0].date, max: S.days[S.days.length - 1].date,
-        onchange: e => { if (e.target.value in S.idx) go({ date: e.target.value }); } });
+      const full = S.date.split('-').reverse().join('/');
       mid = h('div', { class: 'datebar' },
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Ngày trước', disabled: i === 0 ? true : null, onclick: () => go({ date: S.days[i - 1].date }) }, icon('left')),
-        h('div', { class: 'label' }, dateLabel(S.date), h('small', { text: S.date.split('-').reverse().join('/') }), picker),
+        h('button', { class: 'label', type: 'button', 'aria-haspopup': 'dialog', 'aria-label': `Chọn ngày trên lịch, đang xem ${dateLabel(S.date)} ${full}`, onclick: openCalendar },
+          dateLabel(S.date), h('small', { text: full })),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Ngày sau', disabled: i === S.days.length - 1 ? true : null, onclick: () => go({ date: S.days[i + 1].date }) }, icon('right')));
     }
     return h('header', { class: 'topbar' }, syncBtn, mid,
@@ -140,6 +140,53 @@
     back.addEventListener('keydown', e => { if (e.key === 'Escape') back.remove(); });
     document.body.append(back);
     need.focus();
+  }
+
+  // ---------- lịch tháng: ô tô theo vùng recovery, chọn ngày ----------
+  function openCalendar() {
+    let [y, mo] = S.date.split('-').map(Number);
+    const first = S.days[0].date.slice(0, 7), last = S.days[S.days.length - 1].date.slice(0, 7);
+    const ym = () => `${y}-${String(mo).padStart(2, '0')}`;
+    const back = h('div', { class: 'sheet-backdrop', onclick: e => { if (e.target === back) close(); } });
+    const close = () => { back.remove(); app.inert = false; app.querySelector('.datebar .label')?.focus(); };
+    const prevBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Tháng trước', onclick: () => shift(-1) }, icon('left'));
+    const nextBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Tháng sau', onclick: () => shift(1) }, icon('right'));
+    const title = h('h2', { 'aria-live': 'polite' });
+    const grid = h('div', { class: 'cal-grid' });
+    function shift(k) {
+      mo += k;
+      if (mo < 1) { mo = 12; y--; }
+      if (mo > 12) { mo = 1; y++; }
+      paint();
+      if ((k < 0 ? prevBtn : nextBtn).disabled) (k < 0 ? nextBtn : prevBtn).focus();   // nút vừa bấm bị tắt ⇒ đừng để mất focus
+    }
+    function paint() {
+      title.textContent = `Tháng ${mo}/${y}`;
+      prevBtn.disabled = ym() <= first;
+      nextBtn.disabled = ym() >= last;
+      const cells = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(w => h('span', { class: 'wd', 'aria-hidden': 'true', text: w }));
+      for (let k = (new Date(y, mo - 1, 1).getDay() + 6) % 7; k > 0; k--) cells.push(h('span'));   // cột đầu là T2
+      for (let dd = 1, n = new Date(y, mo, 0).getDate(); dd <= n; dd++) {
+        const date = `${ym()}-${String(dd).padStart(2, '0')}`;
+        const x = S.days[S.idx[date]], z = x && zoneOf(x);
+        const what = !x ? 'không có dữ liệu' : z ? `hồi phục ${x.recovery.score}%, ${z.label}` : 'chưa có điểm hồi phục';
+        cells.push(h('button', { class: 'cal-day', type: 'button', disabled: x ? null : true, 'aria-current': date === S.date ? 'date' : null,
+          'aria-label': `${fmt.weekday(date)} ${dd}/${mo}: ${what}`, style: { borderColor: z ? z.color : null },
+          onclick: () => { go({ date }); close(); } }, String(dd)));
+      }
+      grid.replaceChildren(...cells);
+    }
+    const legend = [[C.green, 'Hồi phục tốt'], [C.yellow, 'Hồi phục vừa'], [C.red, 'Cần nghỉ ngơi'], [null, 'Chưa có điểm']];
+    back.append(h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Chọn ngày' },
+      h('div', { class: 'cal-head' }, prevBtn, title, nextBtn), grid,
+      h('div', { class: 'legend l4 cal-legend' }, legend.map(([c, k]) => h('div', { class: 'item' }, h('span', { class: 'sw', style: { borderColor: c } }), h('span', { class: 'k', text: k })))),
+      h('div', { class: 'row-btns' }, h('button', { class: 'btn ghost', type: 'button', onclick: close }, 'Đóng'))));
+    // chặn phím lan ra document: ←/→ ở đó đổi ngày phía sau lịch
+    back.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
+    document.body.append(back);
+    app.inert = true;   // modal thật: Tab không lọt ra trang phía sau
+    paint();
+    grid.querySelector('[aria-current=date]').focus();
   }
 
   // ---------- khởi động ----------
