@@ -125,6 +125,7 @@ def host_allowed(host_header: str, *, allow_lan: bool, allowed_hosts: tuple[str,
 def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = ()):
     class Handler(BaseHTTPRequestHandler):
         server_version = "GarminHealth/1"
+        _head = False   # do_HEAD: gửi header như GET, bỏ thân
 
         def log_message(self, fmt, *args):  # gọn log
             if not self.path.startswith(("/api/status",)):
@@ -141,7 +142,8 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
             if cookie is not None:
                 self.send_header("Set-Cookie", cookie)
             self.end_headers()
-            self.wfile.write(body)
+            if not self._head:
+                self.wfile.write(body)
 
         def _json(self, status: int, obj, *, cookie: str | None = None) -> None:
             self._send(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"), STATIC_TYPES[".json"], cookie=cookie)
@@ -196,6 +198,14 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
             return data
 
         # ---------- GET ----------
+        def do_HEAD(self):
+            # curl -I, máy theo dõi uptime; thiếu hàm này http.server trả 501
+            self._head = True
+            try:
+                self.do_GET()
+            finally:
+                self._head = False
+
         def do_GET(self):
             if not self._host_ok():
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "host"})

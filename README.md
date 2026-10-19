@@ -297,7 +297,7 @@ tối đa 1h30) − ngủ trưa.
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest -q          # 92 test, ~1–2 phút, không cần mạng/Garmin
+python -m pytest -q          # 94 test, ~1–2 phút, không cần mạng/Garmin
 ```
 
 Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ SVG tự vẽ

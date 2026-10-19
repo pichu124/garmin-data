@@ -153,6 +153,14 @@ def test_without_session_only_login_page_and_assets(locked_server):
     assert not syncs
 
 
+def test_head_respects_login(locked_server):
+    base, _ = locked_server
+    status, body, _ = call(base + "/data/summary.json", "HEAD", headers={"Host": DOMAIN})
+    assert (status, body) == (401, b"")
+    status, body, headers = call(base + "/", "HEAD", headers={"Host": DOMAIN})
+    assert (status, body) == (200, b"") and int(headers["Content-Length"]) > 0
+
+
 def test_login_sets_secure_session_cookie(locked_server):
     base, syncs = locked_server
     assert login(base, "sai-mat-khau")[0] == 401
