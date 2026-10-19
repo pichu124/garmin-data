@@ -72,6 +72,10 @@ class Paths:
         return self.data / "auth.json"
 
     @property
+    def mcp(self) -> Path:
+        return self.data / "mcp.json"
+
+    @property
     def backups(self) -> Path:
         return self.data / "backups"
 

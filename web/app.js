@@ -206,6 +206,14 @@
   let resizeT = null;
   window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(render, 200); });
   window.addEventListener('hashchange', () => { readHash(); render(); });
+  // app cài trên điện thoại nằm nền nhiều ngày, mở lại chỉ tiếp tục trang cũ ⇒ quay lại sau ≥30 phút thì tải lại
+  // (số liệu của lần đồng bộ mới + giao diện mới nếu máy chủ vừa cập nhật)
+  const STALE_MS = 30 * 60 * 1000;
+  let hiddenAt = null;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hiddenAt = Date.now();
+    else if (hiddenAt !== null && Date.now() - hiddenAt >= STALE_MS && !S.staticMode) location.reload();
+  });
   document.addEventListener('keydown', e => {
     if (e.target.closest('input,select,textarea') || !S.days.length || S.tab === 'trends') return;
     const i = S.idx[S.date];

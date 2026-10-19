@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { h, fmt, barChart } = window.GH;
-  const { S, C, val, isNum, prevAvg, dateLabel, zoneOf, card, chartCard, tableOf, lastN, go, recoveryRing, vitalLine, views } = window.GHA;
+  const { S, C, val, isNum, prevAvg, dateLabel, zoneOf, card, chartCard, tableOf, lastN, go, recoveryRing, vitalLine, explainCard, views } = window.GHA;
 
   function viewRecovery(d) {
     const out = [];
@@ -13,6 +13,7 @@
     out.push(h('div', { class: 'hero' }, ringNode,
       z ? h('div', { class: 'zone-label' }, h('span', { class: 'dot', style: { background: z.color } }), z.label) : null,
       h('p', { class: 'msg', text: z ? z.msg : r && r.calibrating ? 'Đang hiệu chỉnh baseline (cần ≥4 đêm).' : 'Chưa có dữ liệu đêm qua.' })));
+    out.push(explainCard(d, 'recovery'));
     out.push(contributorsCard(d));
     const days = lastN(30);
     out.push(h('div', { class: 'grid grid-2' },

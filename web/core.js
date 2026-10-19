@@ -192,6 +192,25 @@
     }, null);
   }
 
+  // ---------- giải thích theo quy tắc (build ghi vào days/<ngày>.json → explain) ----------
+  function explainBody(sec) {   // dùng với replaceChildren ⇒ không được có null (sẽ in chữ "null")
+    const out = sec.lines.map(t => h('p', { text: t }));
+    if (sec.advice.length) out.push(h('ul', { class: 'advice' }, sec.advice.map(t => h('li', { text: t }))));
+    return out;
+  }
+  // ẩn tới khi chi tiết ngày tải xong; file cũ chưa có explain (chưa build lại) thì giữ ẩn
+  function explainCard(d, key, title = 'Giải thích & lời khuyên') {
+    const body = h('div', { class: 'explain' });
+    const node = h('section', { class: 'card', hidden: true }, h('h2', { text: title }), body);
+    mount(() => getDetail(d.date).then(det => {
+      const sec = det && det.explain && det.explain[key];
+      if (!sec || !(sec.lines.length || sec.advice.length)) return;
+      body.replaceChildren(...explainBody(sec));
+      node.hidden = false;
+    }));
+    return node;
+  }
+
   function vitalLine(title, sub, key, color, days, dec) {
     return chartCard(title, sub, box => lineChart(box, {
       data: days.map(x => ({ key: x.date, label: fmt.day(x.date), title: fmt.day(x.date), value: val(x, 'vitals', key), lo: val(x, 'health', key, 'lo'), hi: val(x, 'health', key, 'hi') })),
@@ -203,7 +222,7 @@
   const GHA = window.GHA = {
     S, C, icon, mount, takeMounts, authGate, loadSummary, setSummary, getDetail, post,
     day, val, isNum, prevAvg, trendBadge, dateLabel, zoneOf, actName, card, chartCard, tableOf, lastN, tile, go,
-    recoveryRing, strainRing, sleepRing, activityList, hrCard, vitalLine,
+    recoveryRing, strainRing, sleepRing, activityList, hrCard, vitalLine, explainBody, explainCard,
     render: null,   // app.js gán
     views: {},      // view-*.js đăng ký: views[key] = d => mảng node (key: overview, sleep, recovery, strain, activity, trends, health, journal)
     zonesCard: null,   // view-strain.js gán; view-activity.js dùng lại
