@@ -79,6 +79,8 @@ def test_health_all_in_range_and_low_spo2():
     low = make_day(health={"hrv": {"status": "in"}, "spo2": {"value": 90.5, "mean": 96.0, "lo": 94.5, "hi": 97.5, "status": "low"}})
     assert any("dưới 92%" in x for x in explain.health(low, [])["advice"])
     assert explain.health(make_day(health=None), [])["lines"][0].startswith("Chưa đủ dữ liệu")
+    only_rhr = make_day(health={k: {"status": None} for k in ("hrv", "resp", "spo2")})   # đêm không đeo đồng hồ
+    assert explain.health(only_rhr, [])["lines"][0] == "Nhịp tim nghỉ nằm trong ngưỡng bình thường của bạn (hoặc lệch theo hướng tốt) ✓."
 
 
 def test_health_flags_unusual_stress_but_not_on_partial_day():

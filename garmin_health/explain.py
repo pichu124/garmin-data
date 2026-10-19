@@ -268,7 +268,10 @@ def health(day: dict, prev: list[dict]) -> dict:
     alerts = _vital_alerts(day)
     bad = {k: status for k, status, _ in alerts}
     lines, advice = [line for *_, line in alerts], []
-    if not bad:
+    if not bad and len(measured) == 1:   # "Cả 1 chỉ số" nghe sai — gọi đúng tên chỉ số
+        label = next(lb for k, lb, *_ in VITALS if k == measured[0])
+        lines.append(f"{label} nằm trong ngưỡng bình thường của bạn (hoặc lệch theo hướng tốt) ✓.")
+    elif not bad:
         lines.append(f"Cả {len(measured)} chỉ số nằm trong ngưỡng bình thường của bạn (hoặc lệch theo hướng tốt) ✓.")
     if bad.get("rhr") == "high" and (bad.get("resp") == "high" or bad.get("hrv") == "low"):
         other = "nhịp thở tăng" if bad.get("resp") == "high" else "HRV giảm"
