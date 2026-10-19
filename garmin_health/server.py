@@ -192,8 +192,9 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
         def _mcp(self, path_token: str | None) -> None:
             if app.mcp is None:
                 return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
-            auth = self.headers.get("Authorization") or ""
-            token = path_token or (auth[7:].strip() if auth[:7].lower() == "bearer " else None)
+            # "Bearer <token>" theo chuẩn; người dùng có thể điền token trơn vào ô Request headers ⇒ nhận cả hai
+            auth = (self.headers.get("Authorization") or "").strip()
+            token = path_token or (auth[7:].strip() if auth[:7].lower() == "bearer " else auth or None)
             if not app.mcp.check(token):
                 return self._json(HTTPStatus.UNAUTHORIZED, {"error": "Sai hoặc thiếu token connector"},
                                   headers={"WWW-Authenticate": 'Bearer realm="garmin-health"'})

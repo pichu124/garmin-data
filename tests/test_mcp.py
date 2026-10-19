@@ -204,6 +204,7 @@ def test_http_token_in_header_or_path(http):
     assert status == 200 and len(json.loads(body)["result"]["tools"]) == 6
     status, body, _ = send(base + "/mcp", body={"jsonrpc": "2.0", "method": "notifications/initialized"}, headers=BEARER)
     assert (status, body) == (202, b"")
+    assert send(base + "/mcp", body=INIT, headers={"Authorization": TOKEN})[0] == 200   # token trơn, thiếu "Bearer"
 
 
 def test_http_rejects_without_valid_token(http):
