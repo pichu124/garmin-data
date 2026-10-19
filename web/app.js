@@ -4,7 +4,7 @@
   'use strict';
   const { h, fmt, tip } = window.GH;
   const GHA = window.GHA;
-  const { S, C, icon, go, day, dateLabel, zoneOf, isNum, post, loadSummary, setSummary, takeMounts } = GHA;
+  const { S, C, icon, go, day, dateLabel, zoneOf, isNum, authGate, post, loadSummary, setSummary, takeMounts } = GHA;
   const app = document.getElementById('app');
 
   // ---------- điều hướng ----------
@@ -96,7 +96,7 @@
   }
   async function pollSync() {
     let st;
-    try { st = (await (await fetch('api/status', { cache: 'no-store' })).json()).sync; } catch (e) { toast('Mất kết nối tới máy chủ'); return; }
+    try { st = (await authGate(await fetch('api/status', { cache: 'no-store' })).json()).sync; } catch (e) { toast('Mất kết nối tới máy chủ'); return; }
     S.sync = st;
     if (st.running) {
       toast(`Đồng bộ: ${st.label}`, st.total ? st.done / st.total : null, true);
@@ -152,7 +152,11 @@
         } }, 'Lưu')),
       msg,
       h('p', { class: 'note', text: days.length ? `Dữ liệu: ${days[0].date} → ${days[days.length - 1].date} (${days.length} ngày) · cập nhật ${S.summary.generated_at.replace('T', ' ').slice(0, 16)} UTC` : '' }),
-      h('p', { class: 'note', text: S.staticMode ? 'Đây là bản xem thử với dữ liệu mẫu.' : 'Xem trên điện thoại: chạy `python run.py serve --lan` rồi mở địa chỉ in ra trên cùng Wi-Fi.' }));
+      S.auth
+        ? h('div', { class: 'row-btns' }, h('button', { class: 'btn ghost', type: 'button', onclick: async () => {
+          try { await post('api/logout'); location.reload(); } catch (e) { msg.textContent = `Lỗi: ${e.message}`; }
+        } }, 'Đăng xuất'))
+        : h('p', { class: 'note', text: S.staticMode ? 'Đây là bản xem thử với dữ liệu mẫu.' : 'Xem trên điện thoại: chạy `python run.py serve --lan` rồi mở địa chỉ in ra trên cùng Wi-Fi.' }));
     need.focus();
   }
 
@@ -213,7 +217,11 @@
     readHash();
     render();
     if (!S.staticMode) {
-      try { const st = (await (await fetch('api/status', { cache: 'no-store' })).json()).sync; if (st.running) pollSync(); } catch (e) { /* server tĩnh */ }
+      try {
+        const st = await authGate(await fetch('api/status', { cache: 'no-store' })).json();
+        S.auth = !!st.auth;
+        if (st.sync.running) pollSync();
+      } catch (e) { /* server tĩnh */ }
     }
   })();
 })();

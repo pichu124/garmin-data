@@ -20,3 +20,6 @@ kiểu EN (`1,234.5`). Xem README.md cho cách dùng và công thức.
 - Web: không CDN, không thư viện; nhãn từ dữ liệu ngoài chèn bằng `textContent`.
   Màu đã kiểm bằng validator dataviz trên nền tối — đổi màu phải kiểm lại.
 - Server chỉ nghe 127.0.0.1 trừ `--lan`; POST cần `Content-Type: application/json` + Origin trùng Host.
+  Host là tên miền chỉ nhận khi có trong `GARMIN_ALLOWED_HOSTS` (chạy sau Caddy trên VPS); khi đó bắt buộc
+  có mật khẩu web (`auth.json`, `run.py password`), thiếu thì `serve` từ chối chạy. Có mật khẩu ⇒ `/data/*`,
+  `/api/*` cần cookie phiên; file tĩnh trong `web/` công khai (không chứa dữ liệu).

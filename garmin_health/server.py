@@ -7,14 +7,18 @@ GET  /api/status            trạng thái đồng bộ
 POST /api/sync              đồng bộ Garmin chạy nền rồi build lại
 POST /api/journal           {"date": "YYYY-MM-DD", "answers": {key: bool}}
 POST /api/settings          {"sleep_baseline_h": 8, ...}
+POST /api/login · /api/logout  {"password": "..."} — chỉ khi đã đặt mật khẩu (auth.json)
 
 Mặc định chỉ nghe 127.0.0.1. POST bắt buộc Content-Type JSON và Origin trùng Host
 (chặn trang web lạ gửi form/fetch "simple request" vào server cục bộ).
+Host là tên miền chỉ được nhận khi khai trong GARMIN_ALLOWED_HOSTS (đặt sau Caddy), và khi
+đó bắt buộc có mật khẩu web: chưa đăng nhập thì / trả trang đăng nhập, /data/* và /api/* trả 401.
 """
 from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
 import threading
 import traceback
@@ -25,6 +29,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import build as builder
+from .auth import COOKIE, SESSION_DAYS, Auth, cookie_value
 from .config import WEB_DIR, Paths, read_json, save_journal_entry, save_settings
 
 STATIC_TYPES = {
@@ -42,8 +47,9 @@ MAX_BODY = 64 * 1024
 
 
 class App:
-    def __init__(self, paths: Paths, *, sync_fn=None, build_fn=None):
+    def __init__(self, paths: Paths, *, sync_fn=None, build_fn=None, auth: Auth | None = None):
         self.paths = paths
+        self.auth = auth
         self.lock = threading.Lock()
         self.sync_fn = sync_fn
         self.build_fn = build_fn or (lambda: builder.build(paths))
@@ -87,8 +93,14 @@ class App:
             self.status.update(running=False, finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
 
-def host_allowed(host_header: str, *, allow_lan: bool) -> bool:
-    """Chống DNS-rebinding: chỉ nhận Host là localhost, hoặc (khi --lan) một địa chỉ IP.
+def allowed_hosts_from_env() -> tuple[str, ...]:
+    """GARMIN_ALLOWED_HOSTS="garmin.duckdns.org,khac.ts.net" — tên miền, không kèm https:// hay cổng."""
+    raw = os.getenv("GARMIN_ALLOWED_HOSTS") or ""
+    return tuple(h.strip().lower().rstrip(".") for h in raw.replace(",", " ").split() if h.strip())
+
+
+def host_allowed(host_header: str, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = ()) -> bool:
+    """Chống DNS-rebinding: chỉ nhận Host là localhost, tên miền đã khai, hoặc (khi --lan) một địa chỉ IP.
 
     Trang độc trỏ tên miền của nó về IP máy này sẽ gửi Host = tên miền đó ⇒ bị chặn.
     """
@@ -99,6 +111,8 @@ def host_allowed(host_header: str, *, allow_lan: bool) -> bool:
         host = host.split(":")[0]
     if host in ("127.0.0.1", "localhost", "::1"):
         return True
+    if host and host.lower().rstrip(".") in allowed_hosts:
+        return True
     if not allow_lan:
         return False
     try:
@@ -108,7 +122,7 @@ def host_allowed(host_header: str, *, allow_lan: bool) -> bool:
         return False
 
 
-def make_handler(app: App, *, allow_lan: bool):
+def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = ()):
     class Handler(BaseHTTPRequestHandler):
         server_version = "GarminHealth/1"
 
@@ -117,17 +131,20 @@ def make_handler(app: App, *, allow_lan: bool):
                 super().log_message(fmt, *args)
 
         # ---------- tiện ích ----------
-        def _send(self, status: int, body: bytes, ctype: str, *, cache: bool = False):
+        def _send(self, status: int, body: bytes, ctype: str, *, cache: bool = False, cookie: str | None = None):
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "max-age=300" if cache else "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            if cookie is not None:
+                self.send_header("Set-Cookie", cookie)
             self.end_headers()
             self.wfile.write(body)
 
-        def _json(self, status: int, obj) -> None:
-            self._send(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"), STATIC_TYPES[".json"])
+        def _json(self, status: int, obj, *, cookie: str | None = None) -> None:
+            self._send(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"), STATIC_TYPES[".json"], cookie=cookie)
 
         def _file(self, path: Path, ctype: str) -> None:
             try:
@@ -137,7 +154,29 @@ def make_handler(app: App, *, allow_lan: bool):
             self._send(HTTPStatus.OK, body, ctype)
 
         def _host_ok(self) -> bool:
-            return host_allowed(self.headers.get("Host") or "", allow_lan=allow_lan)
+            return host_allowed(self.headers.get("Host") or "", allow_lan=allow_lan, allowed_hosts=allowed_hosts)
+
+        def _authed(self) -> bool:
+            return app.auth is None or app.auth.valid(cookie_value(self.headers.get("Cookie")))
+
+        def _session_cookie(self, value: str, max_age: int) -> str:
+            # Secure khi đi qua HTTPS của Caddy/Tailscale; qua đường hầm SSH (http://127.0.0.1) thì không
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            return f"{COOKIE}={value}; Max-Age={max_age}; Path=/; HttpOnly; SameSite=Lax{secure}"
+
+        def _login(self) -> None:
+            if app.auth is None:
+                return self._json(HTTPStatus.NOT_FOUND, {"error": "Chưa đặt mật khẩu web"})
+            password = self._body().get("password")
+            if not isinstance(password, str):
+                raise ValueError("password phải là chuỗi")
+            result = app.auth.login(password)
+            if result == "locked":
+                return self._json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "Sai quá nhiều lần — thử lại sau 10 phút"})
+            if result != "ok":
+                return self._json(HTTPStatus.UNAUTHORIZED, {"error": "Sai mật khẩu"})
+            cookie = self._session_cookie(app.auth.make_cookie(), SESSION_DAYS * 86400)
+            return self._json(HTTPStatus.OK, {"ok": True}, cookie=cookie)
 
         def _post_ok(self) -> bool:
             if not (self.headers.get("Content-Type") or "").startswith("application/json"):
@@ -161,8 +200,11 @@ def make_handler(app: App, *, allow_lan: bool):
             if not self._host_ok():
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "host"})
             path = urlsplit(self.path).path
+            authed = self._authed()
             if path in ("/", "/index.html"):
-                return self._file(WEB_DIR / "index.html", STATIC_TYPES[".html"])
+                return self._file(WEB_DIR / ("index.html" if authed else "login.html"), STATIC_TYPES[".html"])
+            if path.startswith(("/data/", "/api/")) and not authed:
+                return self._json(HTTPStatus.UNAUTHORIZED, {"error": "Cần đăng nhập"})
             if path == "/data/summary.json":
                 return self._file(app.paths.processed / "summary.json", STATIC_TYPES[".json"])
             m = DAY_FILE_RE.match(path)
@@ -171,7 +213,8 @@ def make_handler(app: App, *, allow_lan: bool):
             if path == "/api/status":
                 state = read_json(app.paths.sync_state, {}) or {}
                 return self._json(HTTPStatus.OK, {"sync": app.status, "last_sync": state.get("last_sync"),
-                                                  "has_data": (app.paths.processed / "summary.json").is_file()})
+                                                  "has_data": (app.paths.processed / "summary.json").is_file(),
+                                                  "auth": app.auth is not None})
             m = STATIC_RE.match(path)
             if m:
                 name = m.group(1)
@@ -184,6 +227,12 @@ def make_handler(app: App, *, allow_lan: bool):
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "Yêu cầu bị chặn (Origin/Content-Type)"})
             path = urlsplit(self.path).path
             try:
+                if path == "/api/login":
+                    return self._login()
+                if path == "/api/logout":
+                    return self._json(HTTPStatus.OK, {"ok": True}, cookie=self._session_cookie("", 0))
+                if not self._authed():
+                    return self._json(HTTPStatus.UNAUTHORIZED, {"error": "Cần đăng nhập"})
                 if path == "/api/sync":
                     started = app.start_sync()
                     return self._json(HTTPStatus.ACCEPTED, {"started": started, "sync": app.status})
@@ -220,12 +269,21 @@ class Server(ThreadingHTTPServer):
 
 
 def serve(paths: Paths, *, host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False) -> None:
-    app = App(paths)
+    auth = Auth.load(paths)
+    allowed_hosts = allowed_hosts_from_env()
+    if allowed_hosts and auth is None:
+        # mở ra tên miền mà không có mật khẩu = dữ liệu sức khoẻ công khai trên internet
+        raise SystemExit("✗ Đã đặt GARMIN_ALLOWED_HOSTS nhưng chưa có mật khẩu web — chạy: python run.py password")
+    app = App(paths, auth=auth)
     allow_lan = host not in ("127.0.0.1", "localhost")
-    httpd = Server((host, port), make_handler(app, allow_lan=allow_lan))
+    httpd = Server((host, port), make_handler(app, allow_lan=allow_lan, allowed_hosts=allowed_hosts))
     url = f"http://{'127.0.0.1' if not allow_lan else _lan_ip()}:{port}/"
     print(f"[serve] Mở {url}  (Ctrl+C để dừng)")
-    if allow_lan:
+    if allowed_hosts:
+        print(f"[serve] Nhận tên miền: {', '.join(allowed_hosts)}")
+    if auth is not None:
+        print("[serve] Cần mật khẩu web để xem.")
+    elif allow_lan:
         print("[serve] ⚠ Đang mở cho cả mạng LAN — ai cùng Wi-Fi cũng xem được dữ liệu sức khoẻ.")
     if open_browser:
         import webbrowser

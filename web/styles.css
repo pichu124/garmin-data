@@ -292,3 +292,10 @@ table.data th:first-child, table.data td:first-child { text-align: left; }
 .info { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--text-2); }
 .loading { opacity: .5; transition: opacity .2s; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+/* trang đăng nhập (login.html) */
+.login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding-bottom: 0; }
+.login form { width: 100%; max-width: 360px; padding: 24px 20px; display: grid; justify-items: center; }
+.login h1 { margin: 10px 0 20px; font-size: 20px; }
+.login .field { width: 100%; }
+.login .btn { width: 100%; }
+.login .note { min-height: 1.4em; margin-bottom: 0; text-align: center; }

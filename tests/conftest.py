@@ -15,7 +15,8 @@ NOW = datetime(2026, 10, 15, 12, 0, tzinfo=timezone.utc)  # 19:00 giờ VN
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch):
     # .env máy thật không được lọt vào test
-    for key in ("GARMIN_DATA_DIR", "GARMINTOKENS", "GARMIN_EMAIL", "GARMIN_PASSWORD", "GARMIN_IS_CN"):
+    for key in ("GARMIN_DATA_DIR", "GARMINTOKENS", "GARMIN_EMAIL", "GARMIN_PASSWORD", "GARMIN_IS_CN",
+                "GARMIN_ALLOWED_HOSTS"):
         monkeypatch.delenv(key, raising=False)
 
 
