@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { h, fmt, barChart, hypnogram, STAGES } = window.GH;
-  const { S, C, getDetail, val, isNum, card, chartCard, tableOf, lastN, tile, go, sleepRing, views } = window.GHA;
+  const { S, C, getDetail, val, isNum, card, chartCard, tableOf, lastN, tile, go, sleepRing, explainCard, views } = window.GHA;
 
   function viewSleep(d) {
     const out = [];
@@ -12,6 +12,7 @@
     out.push(h('div', { class: 'hero' }, ringNode,
       h('div', { class: 'zone-label' }, h('span', { class: 'dot', style: { background: C.sleep } }), 'Hiệu suất ngủ'),
       h('p', { class: 'msg', text: sl ? `Ngủ ${fmt.dur(sl.hours)} / cần ${fmt.dur(sl.need_h)} · ${sl.onset} → ${sl.wake}` : 'Không có dữ liệu giấc ngủ đêm qua.' })));
+    out.push(explainCard(d, 'sleep'));
     const need = d.need;
     const needCard = card('Nhu cầu ngủ', 'Cách tính giống WHOOP: nền + strain hôm qua + nợ ngủ − ngủ trưa', h('div', {},
       needRow('Nhu cầu nền', need.baseline_h), needRow('+ Strain hôm qua', need.strain_h), needRow('+ Nợ ngủ', need.debt_h), needRow('− Ngủ trưa', need.nap_h),

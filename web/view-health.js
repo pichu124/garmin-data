@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { h, svg, fmt, tip, sparkline } = window.GH;
-  const { S, C, icon, getDetail, val, isNum, prevAvg, trendBadge, card, chartCard, tableOf, lastN, tile, views } = window.GHA;
+  const { S, C, icon, getDetail, val, isNum, prevAvg, trendBadge, card, chartCard, tableOf, lastN, tile, explainCard, views } = window.GHA;
   // mốc stress của Garmin (thang 0–100, không quy đổi 0–3); up: nhiều phút hơn là tốt (true) / xấu (false) / trung tính (null)
   const STRESS = [
     { key: 'rest', label: 'Nghỉ', range: '0–25', max: 25, color: C.zones[1], up: true },
@@ -29,6 +29,7 @@
         h('span', { class: 'big', text: measured.length ? `${ok}/${measured.length}` : '—' }),
         h('span', { class: 'sec', text: measured.length ? 'chỉ số ổn (trong ngưỡng hoặc lệch hướng tốt)' : 'chưa đủ dữ liệu để dựng ngưỡng' })),
       h('p', { class: 'note', text: 'Nhiệt độ da không có trong API Garmin nên không hiển thị.' })));
+    out.push(explainCard(d, 'health'));
     const days = lastN(30);
     out.push(h('div', { class: 'hm grid grid-2' }, metrics.map(([k, label, unit, dec, color, fav]) => {
       const m = hm[k] || {};

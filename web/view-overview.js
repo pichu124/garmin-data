@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { h, fmt } = window.GH;
-  const { S, val, isNum, prevAvg, trendBadge, zoneOf, card, go, recoveryRing, strainRing, sleepRing, activityList, hrCard, views } = window.GHA;
+  const { S, val, isNum, prevAvg, trendBadge, zoneOf, card, go, mount, getDetail, explainBody, recoveryRing, strainRing, sleepRing, activityList, hrCard, views } = window.GHA;
 
   function dialButton(sub, name, svgNode, aria) {
     svgNode.setAttribute('aria-label', aria);
@@ -24,9 +24,16 @@
     const z = zoneOf(d);
     const st = d.strain || {};
     const kids = [];
-    if (z) kids.push(h('div', { class: 'line' }, h('span', { class: 'dot', style: { background: z.color } }), h('span', { class: 'big', text: `${z.label} · ${d.recovery.score}%` })), h('div', { class: 'sec', text: z.msg }));
-    else if (val(d, 'recovery', 'calibrating')) kids.push(h('div', { class: 'sec', text: 'Đang hiệu chỉnh baseline cá nhân — cần ít nhất 4 đêm có HRV/nhịp tim nghỉ.' }));
-    else kids.push(h('div', { class: 'sec', text: 'Chưa có dữ liệu giấc ngủ/HRV cho sáng ngày này — đeo đồng hồ khi ngủ.' }));
+    // câu mặc định, thay bằng nhận định (explain.outlook) khi chi tiết ngày tải xong
+    const msg = z ? z.msg : val(d, 'recovery', 'calibrating') ? 'Đang hiệu chỉnh baseline cá nhân — cần ít nhất 4 đêm có HRV/nhịp tim nghỉ.'
+      : 'Chưa có dữ liệu giấc ngủ/HRV cho sáng ngày này — đeo đồng hồ khi ngủ.';
+    const why = h('div', { class: 'explain' }, h('div', { class: 'sec', text: msg }));
+    if (z) kids.push(h('div', { class: 'line' }, h('span', { class: 'dot', style: { background: z.color } }), h('span', { class: 'big', text: `${z.label} · ${d.recovery.score}%` })));
+    kids.push(why);
+    mount(() => getDetail(d.date).then(det => {
+      const o = det && det.explain && det.explain.outlook;
+      if (o && (o.lines.length || o.advice.length)) why.replaceChildren(...explainBody(o));
+    }));
     if (st.target) {
       const [lo, hi] = st.target;
       const cur = st.score || 0;
@@ -37,7 +44,7 @@
           h('div', { class: 'fill', style: { width: `${(Math.min(21, cur) / 21) * 100}%` } })),
         h('div', { class: 'progress-scale' }, h('span', { text: '0' }), h('span', { text: status }), h('span', { text: '21' })));
     }
-    return card('Huấn luyện viên', null, h('div', { class: 'coach' }, kids));
+    return card(d.date === S.summary.today ? 'Nhận định hôm nay' : 'Nhận định', null, h('div', { class: 'coach' }, kids));
   }
 
   function keyStats(d) {

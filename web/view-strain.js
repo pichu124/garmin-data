@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { h, fmt, barChart } = window.GH;
-  const { C, val, isNum, card, chartCard, tableOf, lastN, tile, go, strainRing, activityList, hrCard, views } = window.GHA;
+  const { C, val, isNum, card, chartCard, tableOf, lastN, tile, go, strainRing, activityList, hrCard, explainCard, views } = window.GHA;
 
   function viewStrain(d) {
     const out = [];
@@ -12,6 +12,7 @@
     out.push(h('div', { class: 'hero' }, ringNode,
       h('div', { class: 'zone-label' }, h('span', { class: 'dot', style: { background: C.strain } }), d.partial ? 'Strain đến hiện tại' : 'Strain trong ngày'),
       h('p', { class: 'msg', text: st.target ? `Vùng tối ưu theo hồi phục hôm nay: ${fmt.n(st.target[0], 1)}–${fmt.n(st.target[1], 1)} (cung trắng)` : 'Thang 0–21 (logarit): càng lên cao càng khó tăng.' })));
+    out.push(explainCard(d, 'strain'));
     out.push(h('div', { class: 'grid grid-2' }, zonesCard(st, 'Thời gian trong vùng tim', 'Vùng theo % dự trữ nhịp tim (HRR)'), card('Hoạt động', null, activityList(d, false))));
     out.push(h('div', { class: 'tiles t4', style: { marginBottom: '12px' } },
       tile('Calories', fmt.n(st.calories), 'kcal'), tile('Calo vận động', fmt.n(st.active_calories), 'kcal'),

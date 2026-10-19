@@ -1,7 +1,7 @@
 """raw/ → processed/: tính Recovery · Strain · Sleep cho từng ngày rồi ghi JSON cho web.
 
     processed/summary.json        mọi ngày (điểm, chỉ số, hoạt động) + profile + insights
-    processed/days/<ngày>.json    chuỗi trong ngày (HR, stress, body battery, hypnogram)
+    processed/days/<ngày>.json    chuỗi trong ngày (HR, stress, body battery, hypnogram) + giải thích
 
 Đọc tuần tự từ ngày cũ nhất vì nhu cầu ngủ phụ thuộc strain HÔM QUA và nợ ngủ
 3 đêm trước, còn Recovery cần baseline 30 ngày trước đó.
@@ -13,7 +13,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from . import insights
+from . import explain, insights
 from . import normalize as nz
 from . import recovery as rec
 from . import sleep_score as sl
@@ -378,10 +378,10 @@ def build(paths: Paths, *, now: datetime | None = None, log=print) -> dict:
     profile = resolve_profile(store, settings, acts, now.year)
     days = compute_days(norm, acts_by_day, profile, journal, today)
 
-    details_dir = paths.processed / "days"
+    details = []
     for i, day in enumerate(days):
         next_n = norm[days[i + 1]["date"]] if i + 1 < len(days) else None
-        write_json(details_dir / f"{day['date']}.json", day_detail(day, norm[day["date"]], next_n), compact=True)
+        details.append(day_detail(day, norm[day["date"]], next_n))
     for day in days:
         day.pop("_tz", None)
         for a in day["activities"]:
@@ -402,6 +402,12 @@ def build(paths: Paths, *, now: datetime | None = None, log=print) -> dict:
         },
         "days": days,
     }
+    details_dir = paths.processed / "days"
+    for i, detail in enumerate(details):
+        detail["explain"] = explain.day(
+            days, i, planner=summary["planner"] if i == len(days) - 1 else None,
+            journal_impact=summary["insights"]["journal"], questions=journal["questions"], sex=profile["sex"])
+        write_json(details_dir / f"{detail['date']}.json", detail, compact=True)
     write_json(paths.processed / "summary.json", summary, compact=True)
     log(f"[build] {len(days)} ngày ({first} → {last}), {len(acts)} hoạt động, HRmax {profile['hr_max']:.0f} ({profile['hr_max_source']})")
     return summary

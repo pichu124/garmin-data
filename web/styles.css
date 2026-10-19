@@ -119,6 +119,12 @@ a { color: var(--strain-hi); }
 .coach { display: grid; gap: 10px; }
 .coach .line { display: flex; align-items: center; gap: 10px; }
 .coach .big { font-size: 17px; font-weight: 700; }
+/* giải thích theo quy tắc (explain.py) */
+.card[hidden] { display: none; }
+.explain p { margin: 0 0 6px; color: var(--text-2); font-size: 14px; }
+.advice { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.advice li { position: relative; padding-left: 20px; font-size: 14px; }
+.advice li::before { content: '→'; position: absolute; left: 0; color: var(--green); font-weight: 700; }
 .progress { position: relative; height: 10px; background: var(--card-2); border-radius: 999px; }
 .progress .band { position: absolute; top: -3px; bottom: -3px; border-radius: 4px; background: rgba(58, 167, 240, .25); border: 1px solid rgba(58, 167, 240, .6); }
 .progress .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--strain); }
