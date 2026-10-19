@@ -6,6 +6,8 @@
     python run.py demo               xem thử bằng dữ liệu mẫu (không cần Garmin)
     python run.py build              tính lại điểm từ dữ liệu đã tải
     python run.py doctor             kiểm tra dữ liệu đang có
+    python run.py password           đặt mật khẩu web (bắt buộc khi mở qua tên miền/VPS)
+    python run.py backup             sao lưu settings.json + journal.json (zip theo ngày)
 
 Mọi lệnh nhận --data-dir (mặc định ./data, hoặc biến GARMIN_DATA_DIR).
 """
@@ -75,6 +77,36 @@ def cmd_demo(args) -> int:
     return 0
 
 
+def cmd_password(args) -> int:
+    import getpass
+
+    from garmin_health.auth import MIN_PASSWORD, set_password
+
+    paths = default_paths(args.data_dir)
+    pw = getpass.getpass(f"Mật khẩu web mới (≥ {MIN_PASSWORD} ký tự, không hiện khi gõ): ")
+    if pw != getpass.getpass("Nhập lại: "):
+        print("✗ Hai lần nhập không khớp")
+        return 1
+    try:
+        set_password(paths, pw)
+    except ValueError as exc:
+        print(f"✗ {exc}")
+        return 1
+    print(f"✓ Đã lưu {paths.auth}\n  Khởi động lại server để áp dụng — mọi phiên đăng nhập cũ sẽ bị đăng xuất.")
+    return 0
+
+
+def cmd_backup(args) -> int:
+    from garmin_health.backup import backup
+
+    target = backup(default_paths(args.data_dir), out=args.out, keep=args.keep)
+    if target is None:
+        print("Chưa có settings.json / journal.json để sao lưu.")
+        return 0
+    print(f"✓ Sao lưu: {target}")
+    return 0
+
+
 def cmd_doctor(args) -> int:
     paths = default_paths(args.data_dir)
     summary = read_json(paths.processed / "summary.json")
@@ -139,6 +171,14 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("doctor", help="kiểm tra dữ liệu đang có")
     p.set_defaults(fn=cmd_doctor)
+
+    p = sub.add_parser("password", help="đặt mật khẩu web")
+    p.set_defaults(fn=cmd_password)
+
+    p = sub.add_parser("backup", help="sao lưu settings.json + journal.json")
+    p.add_argument("--out", help="thư mục chứa file zip (mặc định <data-dir>/backups)")
+    p.add_argument("--keep", type=int, default=30, help="giữ N bản mới nhất (0 = giữ hết)")
+    p.set_defaults(fn=cmd_backup)
 
     args = ap.parse_args(argv)
     return args.fn(args)

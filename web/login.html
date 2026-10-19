@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1013">
+  <title>Đăng nhập · Garmin Health</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app login">
+    <form class="card" id="login">
+      <img src="icon.svg" alt="" width="56" height="56">
+      <h1>Garmin Health</h1>
+      <div class="field">
+        <label for="pw">Mật khẩu</label>
+        <input id="pw" name="password" type="password" autocomplete="current-password" required autofocus>
+      </div>
+      <button class="btn" type="submit">Đăng nhập</button>
+      <p class="note" id="msg" role="alert"></p>
+    </form>
+  </main>
+  <noscript>Cần bật JavaScript.</noscript>
+  <script src="login.js"></script>
+</body>
+</html>

@@ -103,6 +103,15 @@ def test_sync_runs_in_background(server):
     assert not st["running"] and st["error"] is None and builds
 
 
+def test_head_like_get_without_body(server):
+    base, _, _ = server
+    for path, code in (("/", 200), ("/data/summary.json", 200), ("/khong-co", 404)):
+        status, body = req(base + path, "HEAD")
+        assert (status, body) == (code, b""), path
+    assert req(base + "/", "HEAD", headers={"Host": "evil.example"})[0] == 403
+    assert req(base + "/")[1].startswith(b"<!doctype html>")   # GET sau HEAD vẫn có thân
+
+
 def test_rejects_foreign_host_header(server):
     base, _, _ = server
     assert req(base + "/data/summary.json", headers={"Host": "evil.example"})[0] == 403

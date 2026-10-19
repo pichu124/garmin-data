@@ -37,6 +37,7 @@
     date: null, tab: 'home', sub: 'overview', range: 30,
     param: null, backSub: 'strain',   // trang hoạt động: id hoạt động, tab mà nút quay lại trở về
     staticMode: !!window.GH_DATA, sync: null,
+    auth: false,   // server có mật khẩu web (api/status) ⇒ Cài đặt hiện nút Đăng xuất
   };
   // hàm vẽ chờ chạy sau khi node đã vào DOM (biểu đồ cần đo kích thước); render lấy ra bằng takeMounts
   let mounts = [];
@@ -44,9 +45,14 @@
   const takeMounts = () => { const fns = mounts; mounts = []; return fns; };
 
   // ---------- dữ liệu ----------
+  // 401 = phiên đăng nhập hết hạn ⇒ tải lại trang, server sẽ trả trang đăng nhập
+  function authGate(r) {
+    if (r.status === 401) { location.reload(); throw new Error('Cần đăng nhập lại'); }
+    return r;
+  }
   async function loadSummary() {
     if (window.GH_DATA) { setSummary(window.GH_DATA.summary); return true; }
-    const r = await fetch('data/summary.json', { cache: 'no-store' });
+    const r = authGate(await fetch('data/summary.json', { cache: 'no-store' }));
     if (!r.ok) { setSummary(null); return false; }
     setSummary(await r.json());
     return true;
@@ -62,12 +68,12 @@
     if (S.details.has(date)) return S.details.get(date);
     let d = null;
     if (window.GH_DATA) d = (window.GH_DATA.days || {})[date] || null;
-    else { try { const r = await fetch(`data/days/${date}.json`, { cache: 'no-store' }); d = r.ok ? await r.json() : null; } catch (e) { d = null; } }
+    else { try { const r = authGate(await fetch(`data/days/${date}.json`, { cache: 'no-store' })); d = r.ok ? await r.json() : null; } catch (e) { d = null; } }
     S.details.set(date, d);
     return d;
   }
   async function post(url, body) {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const r = authGate(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }));
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
     return data;
@@ -195,7 +201,7 @@
   }
 
   const GHA = window.GHA = {
-    S, C, icon, mount, takeMounts, loadSummary, setSummary, getDetail, post,
+    S, C, icon, mount, takeMounts, authGate, loadSummary, setSummary, getDetail, post,
     day, val, isNum, prevAvg, trendBadge, dateLabel, zoneOf, actName, card, chartCard, tableOf, lastN, tile, go,
     recoveryRing, strainRing, sleepRing, activityList, hrCard, vitalLine,
     render: null,   // app.js gán

@@ -49,6 +49,7 @@ python run.py serve --open # mở http://127.0.0.1:8765
 - Xem trên **điện thoại** (cùng Wi-Fi): `python run.py serve --lan` rồi mở địa chỉ
   in ra. Trên iPhone/Android có thể "Thêm vào màn hình chính" để mở như app.
   Chế độ này cho mọi máy trong mạng LAN xem được dữ liệu — chỉ dùng ở nhà.
+  Muốn xem trên điện thoại ở mọi nơi: chạy trên VPS, xem mục [Chạy trên VPS](#chạy-trên-vps).
 - Tự đồng bộ mỗi sáng: tạo task trong **Task Scheduler** chạy
   `C:\đường\dẫn\garmin-data\.venv\Scripts\python.exe run.py sync` lúc ~9:00
   (sau khi đồng hồ đã đồng bộ giấc ngủ lên Garmin Connect).
@@ -93,10 +94,169 @@ data/
   processed/summary.json     điểm mọi ngày (giao diện đọc file này)
   processed/days/<ngày>.json chuỗi nhịp tim / stress / giai đoạn ngủ trong ngày
   settings.json  journal.json
+  auth.json                  băm mật khẩu web (chỉ có khi đã chạy `password`)
+  backups/                   bản sao lưu settings + journal (lệnh `backup`)
 ```
 
 `data/` đã nằm trong `.gitignore` — dữ liệu sức khoẻ không bao giờ bị commit.
 Đổi công thức hoặc cài đặt ⇒ `python run.py build` tính lại từ raw trong vài giây.
+
+## Chạy trên VPS
+
+Để xem trên **điện thoại Android ở mọi nơi**: chạy app trên một VPS, Caddy lo HTTPS cho
+một tên miền riêng, app đòi **mật khẩu web**. Ví dụ dưới dùng VPS Ubuntu 24.04 (Oracle Free
+Tier, user `ubuntu`) đã có Caddy chạy một web khác (cổng 80/443 đã mở). garmin-data vẫn chỉ
+nghe `127.0.0.1:8765`, không mở thêm cổng nào.
+
+```
+Điện thoại ──HTTPS──▶ Caddy :443 (garmin-cua-ban.duckdns.org) ──▶ 127.0.0.1:8765 (garmin-data)
+```
+
+Thay `garmin-cua-ban.duckdns.org` bằng tên miền của bạn, `<IP-VPS>` bằng IP công khai,
+`$key` bằng file khoá SSH trong mọi lệnh dưới.
+
+**1. Cài đặt**
+
+```bash
+sudo apt install -y python3-venv
+sudo git clone https://github.com/pichu124/garmin-data.git /opt/garmin-data
+sudo chown -R ubuntu:ubuntu /opt/garmin-data
+cd /opt/garmin-data
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+sudo mkdir -p /var/lib/garmin-data && sudo chown ubuntu:ubuntu /var/lib/garmin-data
+```
+
+**2. Đăng nhập Garmin, tải dữ liệu**
+
+```bash
+.venv/bin/python run.py login
+.venv/bin/python run.py sync --data-dir /var/lib/garmin-data
+```
+
+Garmin có thể chặn đăng nhập từ IP của trung tâm dữ liệu. Nếu `login` báo lỗi, chạy
+`python run.py login` trên Windows rồi chép token sang (PowerShell):
+
+```powershell
+ssh -i $key ubuntu@<IP-VPS> "mkdir -p ~/.garminconnect && chmod 700 ~/.garminconnect"
+scp -i $key $HOME\.garminconnect\garmin_tokens.json ubuntu@<IP-VPS>:~/.garminconnect/
+ssh -i $key ubuntu@<IP-VPS> "chmod 600 ~/.garminconnect/garmin_tokens.json"
+```
+
+**3. Mật khẩu web**
+
+```bash
+.venv/bin/python run.py password --data-dir /var/lib/garmin-data
+```
+
+Ít nhất 10 ký tự, đừng trùng mật khẩu Garmin. Mật khẩu lưu dạng băm PBKDF2 trong
+`/var/lib/garmin-data/auth.json` (quyền 600). Đã khai tên miền mà chưa có mật khẩu thì
+server **từ chối chạy**.
+
+**4. Service systemd**
+
+```bash
+sudo tee /etc/systemd/system/garmin-data.service >/dev/null <<'UNIT'
+[Unit]
+Description=Garmin Health
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/garmin-data
+Environment=GARMIN_ALLOWED_HOSTS=garmin-cua-ban.duckdns.org
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/garmin-data/.venv/bin/python run.py serve --data-dir /var/lib/garmin-data
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable --now garmin-data
+journalctl -u garmin-data -n 5 --no-pager   # phải thấy "Nhận tên miền" và "Cần mật khẩu web"
+```
+
+`GARMIN_ALLOWED_HOSTS` là danh sách tên miền (cách nhau dấu phẩy, không kèm `https://`) mà
+server chấp nhận trong Host. Tên miền khác vẫn bị chặn để chống DNS-rebinding.
+
+**5. Tên miền + Caddy**
+
+Trên [duckdns.org](https://www.duckdns.org), tạo thêm một subdomain (ví dụ `garmin-cua-ban`)
+trỏ về IP của VPS. Rồi thêm một khối vào Caddyfile, giữ nguyên các khối đang có:
+
+```bash
+sudo tee -a /etc/caddy/Caddyfile >/dev/null <<'CADDY'
+
+garmin-cua-ban.duckdns.org {
+	encode gzip
+	reverse_proxy 127.0.0.1:8765
+}
+CADDY
+sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+```
+
+Caddy tự lấy chứng chỉ HTTPS cho tên mới. Mở `https://garmin-cua-ban.duckdns.org` trên máy
+tính để kiểm tra: phải thấy trang đăng nhập.
+
+**6. Trên điện thoại Android**
+
+Chrome → `https://garmin-cua-ban.duckdns.org` → nhập mật khẩu web → menu **⋮** →
+**Thêm vào màn hình chính** (hoặc **Cài đặt ứng dụng**). App mở toàn màn hình như app thường;
+phiên đăng nhập giữ 90 ngày. Nút **Đăng xuất** nằm trong ⚙ Cài đặt.
+
+**7. Đồng bộ + sao lưu tự động**
+
+```bash
+(crontab -l 2>/dev/null
+ echo "15 9 * * * cd /opt/garmin-data && .venv/bin/python run.py sync --data-dir /var/lib/garmin-data >> /home/ubuntu/garmin-sync.log 2>&1"
+ echo "30 9 * * * cd /opt/garmin-data && .venv/bin/python run.py backup --data-dir /var/lib/garmin-data >> /home/ubuntu/garmin-sync.log 2>&1") | crontab -
+```
+
+Lệnh này giữ nguyên các dòng cron đã có (ví dụ cron sao lưu của web khác). Giờ trong cron theo
+giờ máy (Asia/Ho_Chi_Minh). Nút **↻ Đồng bộ** trên app vẫn dùng được bất cứ lúc nào.
+
+`backup` ghi `garmin-backup-YYYY-MM-DD.zip` (settings.json + journal.json) vào
+`/var/lib/garmin-data/backups/` và giữ 30 bản mới nhất. Số liệu Garmin không cần sao lưu vì
+`sync --days 365` tải lại được, còn nhật ký và cài đặt chỉ có trên VPS. **Bản sao lưu vẫn
+nằm trên VPS**, mà Oracle có thể tắt hoặc thu hồi máy rỗi hay vượt hạn mức Always Free
+([hạn mức hiện tại](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm),
+nên kiểm trong Console). Thỉnh thoảng kéo về Windows:
+
+```powershell
+mkdir -Force $HOME\Documents\garmin-backup
+scp -i $key "ubuntu@<IP-VPS>:/var/lib/garmin-data/backups/*.zip" $HOME\Documents\garmin-backup\
+```
+
+Khôi phục (máy mới thì `scp` file zip lên trước): giải nén vào thư mục dữ liệu rồi tính lại.
+
+```bash
+cd /opt/garmin-data
+.venv/bin/python -m zipfile -e /var/lib/garmin-data/backups/garmin-backup-2026-10-19.zip /var/lib/garmin-data
+.venv/bin/python run.py build --data-dir /var/lib/garmin-data
+```
+
+**Cập nhật mã**
+
+```bash
+cd /opt/garmin-data && git pull && .venv/bin/pip install -r requirements.txt
+.venv/bin/python run.py build --data-dir /var/lib/garmin-data
+sudo systemctl restart garmin-data
+```
+
+**Lưu ý**
+
+- Đổi mật khẩu: chạy lại `run.py password`, rồi `sudo systemctl restart garmin-data`. Mọi
+  phiên cũ (kể cả trên điện thoại bị mất) bị đăng xuất.
+- Sai mật khẩu 10 lần trong 10 phút thì đăng nhập bị khoá 10 phút. Phiên đang mở vẫn dùng được.
+- Trên VPS không dùng `--lan` và không mở cổng 8765 trên tường lửa.
+- Không muốn mở ra internet: bỏ dòng `Environment=GARMIN_ALLOWED_HOSTS` và bước 5, rồi xem
+  qua đường hầm SSH từ máy tính Windows (giữ cửa sổ mở, vào `http://127.0.0.1:8765`):
+
+  ```powershell
+  ssh -i $key -L 8765:127.0.0.1:8765 ubuntu@<IP-VPS>
+  ```
 
 ## Cách tính (tóm tắt)
 
@@ -137,12 +297,13 @@ tối đa 1h30) − ngủ trưa.
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest -q          # 68 test, ~1–2 phút, không cần mạng/Garmin
+python -m pytest -q          # 94 test, ~1–2 phút, không cần mạng/Garmin
 ```
 
 Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ SVG tự vẽ
 (chạy offline, không CDN). Server dùng `http.server` của thư viện chuẩn, mặc
-định chỉ nghe `127.0.0.1`; POST bắt buộc JSON + cùng origin.
+định chỉ nghe `127.0.0.1`; POST bắt buộc JSON + cùng origin. Host là tên miền chỉ được nhận
+khi khai trong `GARMIN_ALLOWED_HOSTS`, và khi đó bắt buộc có mật khẩu web.
 
 | File | Vai trò |
 |---|---|
@@ -152,6 +313,8 @@ Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ 
 | `garmin_health/build.py` | raw → `processed/*.json` |
 | `garmin_health/insights.py` | nhật ký, tổng kết tuần |
 | `garmin_health/demo.py` | sinh dữ liệu mẫu đúng định dạng Garmin |
-| `garmin_health/server.py` | web server + API đồng bộ / nhật ký / cài đặt |
-| `web/` | giao diện: `app.js` khung + router, `core.js` tiện ích chung, `view-*.js` từng màn hình, `charts.js` biểu đồ SVG |
+| `garmin_health/server.py` | web server + API đồng bộ / nhật ký / cài đặt / đăng nhập |
+| `garmin_health/auth.py` | mật khẩu web (PBKDF2) + cookie phiên ký HMAC, khoá khi sai nhiều lần |
+| `garmin_health/backup.py` | sao lưu settings.json + journal.json thành zip theo ngày |
+| `web/` | giao diện: `app.js` khung + router, `core.js` tiện ích chung, `view-*.js` từng màn hình, `charts.js` biểu đồ SVG, `login.html` + `login.js` trang đăng nhập |
 | `scripts/shots.py` | chụp mọi màn hình 390px + 1280px (cần `pip install playwright`, dùng Chrome/Edge có sẵn) |

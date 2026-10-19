@@ -68,6 +68,14 @@ class Paths:
         return self.data / "journal.json"
 
     @property
+    def auth(self) -> Path:
+        return self.data / "auth.json"
+
+    @property
+    def backups(self) -> Path:
+        return self.data / "backups"
+
+    @property
     def sync_state(self) -> Path:
         return self.data / "raw" / "_sync.json"
 
