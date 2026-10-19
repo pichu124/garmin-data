@@ -89,6 +89,8 @@ Sinh 150 ngày dữ liệu giả **đúng định dạng JSON của Garmin** và
 - Bấm nhãn ngày ở trên cùng để mở **lịch tháng** (mỗi ngày tô màu theo hồi phục);
   phím ← → để chuyển ngày; mỗi biểu đồ có nút **Bảng** để xem số liệu dạng bảng.
 - ⚙ **Cài đặt**: nhu cầu ngủ nền, nhịp tim tối đa, giờ muốn dậy.
+- Mở lại app sau ≥ 30 phút ở nền: trang tự tải lại (số liệu của lần đồng bộ mới nhất,
+  giao diện mới nếu máy chủ vừa cập nhật).
 
 ## Dữ liệu nằm ở đâu
 
