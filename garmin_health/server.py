@@ -8,6 +8,7 @@ POST /api/sync              đồng bộ Garmin chạy nền rồi build lại
 POST /api/journal           {"date": "YYYY-MM-DD", "answers": {key: bool}}
 POST /api/settings          {"sleep_baseline_h": 8, ...}
 POST /api/login · /api/logout  {"password": "..."} — chỉ khi đã đặt mật khẩu (auth.json)
+POST /mcp · /mcp/<token>    connector MCP cho Claude (mcp.py), token riêng, không dùng cookie
 
 Mặc định chỉ nghe 127.0.0.1. POST bắt buộc Content-Type JSON và Origin trùng Host
 (chặn trang web lạ gửi form/fetch "simple request" vào server cục bộ).
@@ -31,6 +32,7 @@ from urllib.parse import urlsplit
 from . import build as builder
 from .auth import COOKIE, SESSION_DAYS, Auth, cookie_value
 from .config import WEB_DIR, Paths, read_json, save_journal_entry, save_settings
+from .mcp import Connector
 
 STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -43,13 +45,16 @@ STATIC_TYPES = {
 }
 DAY_FILE_RE = re.compile(r"^/data/days/(\d{4}-\d{2}-\d{2})\.json$")
 STATIC_RE = re.compile(r"^/([a-z0-9_-]+\.(?:js|css|svg|png|webmanifest))$")
+MCP_RE = re.compile(r"^/mcp(?:/([A-Za-z0-9_-]+))?$")
+MCP_LOG_RE = re.compile(r"/mcp/[^\s\"]+")
 MAX_BODY = 64 * 1024
 
 
 class App:
-    def __init__(self, paths: Paths, *, sync_fn=None, build_fn=None, auth: Auth | None = None):
+    def __init__(self, paths: Paths, *, sync_fn=None, build_fn=None, auth: Auth | None = None, mcp: Connector | None = None):
         self.paths = paths
         self.auth = auth
+        self.mcp = mcp
         self.lock = threading.Lock()
         self.sync_fn = sync_fn
         self.build_fn = build_fn or (lambda: builder.build(paths))
@@ -127,12 +132,13 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
         server_version = "GarminHealth/1"
         _head = False   # do_HEAD: gửi header như GET, bỏ thân
 
-        def log_message(self, fmt, *args):  # gọn log
-            if not self.path.startswith(("/api/status",)):
-                super().log_message(fmt, *args)
+        def log_message(self, fmt, *args):  # gọn log; token trong /mcp/<token> không được lọt vào journalctl
+            if not getattr(self, "path", "").startswith(("/api/status",)):
+                super().log_message("%s", MCP_LOG_RE.sub("/mcp/***", fmt % args))
 
         # ---------- tiện ích ----------
-        def _send(self, status: int, body: bytes, ctype: str, *, cache: bool = False, cookie: str | None = None):
+        def _send(self, status: int, body: bytes, ctype: str, *, cache: bool = False, cookie: str | None = None,
+                  headers: dict | None = None):
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
@@ -141,12 +147,15 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
             self.send_header("X-Frame-Options", "DENY")
             if cookie is not None:
                 self.send_header("Set-Cookie", cookie)
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
             self.end_headers()
             if not self._head:
                 self.wfile.write(body)
 
-        def _json(self, status: int, obj, *, cookie: str | None = None) -> None:
-            self._send(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"), STATIC_TYPES[".json"], cookie=cookie)
+        def _json(self, status: int, obj, *, cookie: str | None = None, headers: dict | None = None) -> None:
+            self._send(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"), STATIC_TYPES[".json"],
+                       cookie=cookie, headers=headers)
 
         def _file(self, path: Path, ctype: str) -> None:
             try:
@@ -180,6 +189,27 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
             cookie = self._session_cookie(app.auth.make_cookie(), SESSION_DAYS * 86400)
             return self._json(HTTPStatus.OK, {"ok": True}, cookie=cookie)
 
+        def _mcp(self, path_token: str | None) -> None:
+            if app.mcp is None:
+                return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            auth = self.headers.get("Authorization") or ""
+            token = path_token or (auth[7:].strip() if auth[:7].lower() == "bearer " else None)
+            if not app.mcp.check(token):
+                return self._json(HTTPStatus.UNAUTHORIZED, {"error": "Sai hoặc thiếu token connector"},
+                                  headers={"WWW-Authenticate": 'Bearer realm="garmin-health"'})
+            length = int(self.headers.get("Content-Length") or 0)
+            if not 0 < length <= MAX_BODY:
+                raise ValueError("Content-Length không hợp lệ")
+            try:
+                payload = json.loads(self.rfile.read(length))
+            except ValueError:
+                return self._json(HTTPStatus.BAD_REQUEST, {"jsonrpc": "2.0", "id": None,
+                                                           "error": {"code": -32700, "message": "JSON không hợp lệ"}})
+            reply = app.mcp.handle(payload)
+            if reply is None:   # chỉ có notification ⇒ 202, không thân
+                return self._send(HTTPStatus.ACCEPTED, b"", STATIC_TYPES[".json"])
+            return self._json(HTTPStatus.OK, reply)
+
         def _post_ok(self) -> bool:
             if not (self.headers.get("Content-Type") or "").startswith("application/json"):
                 return False
@@ -198,6 +228,11 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
             return data
 
         # ---------- GET ----------
+        def do_DELETE(self):   # MCP: client đóng phiên — server này không giữ phiên
+            if not self._host_ok():
+                return self._json(HTTPStatus.FORBIDDEN, {"error": "host"})
+            return self._json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "not allowed"}, headers={"Allow": "POST"})
+
         def do_HEAD(self):
             # curl -I, máy theo dõi uptime; thiếu hàm này http.server trả 501
             self._head = True
@@ -213,6 +248,8 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
             authed = self._authed()
             if path in ("/", "/index.html"):
                 return self._file(WEB_DIR / ("index.html" if authed else "login.html"), STATIC_TYPES[".html"])
+            if MCP_RE.match(path):   # không mở luồng SSE: chỉ nhận POST
+                return self._json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "POST only"}, headers={"Allow": "POST"})
             if path.startswith(("/data/", "/api/")) and not authed:
                 return self._json(HTTPStatus.UNAUTHORIZED, {"error": "Cần đăng nhập"})
             if path == "/data/summary.json":
@@ -237,6 +274,9 @@ def make_handler(app: App, *, allow_lan: bool, allowed_hosts: tuple[str, ...] = 
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "Yêu cầu bị chặn (Origin/Content-Type)"})
             path = urlsplit(self.path).path
             try:
+                m = MCP_RE.match(path)
+                if m:
+                    return self._mcp(m.group(1))
                 if path == "/api/login":
                     return self._login()
                 if path == "/api/logout":
@@ -284,7 +324,8 @@ def serve(paths: Paths, *, host: str = "127.0.0.1", port: int = 8765, open_brows
     if allowed_hosts and auth is None:
         # mở ra tên miền mà không có mật khẩu = dữ liệu sức khoẻ công khai trên internet
         raise SystemExit("✗ Đã đặt GARMIN_ALLOWED_HOSTS nhưng chưa có mật khẩu web — chạy: python run.py password")
-    app = App(paths, auth=auth)
+    mcp = Connector.load(paths)
+    app = App(paths, auth=auth, mcp=mcp)
     allow_lan = host not in ("127.0.0.1", "localhost")
     httpd = Server((host, port), make_handler(app, allow_lan=allow_lan, allowed_hosts=allowed_hosts))
     url = f"http://{'127.0.0.1' if not allow_lan else _lan_ip()}:{port}/"
@@ -293,6 +334,8 @@ def serve(paths: Paths, *, host: str = "127.0.0.1", port: int = 8765, open_brows
         print(f"[serve] Nhận tên miền: {', '.join(allowed_hosts)}")
     if auth is not None:
         print("[serve] Cần mật khẩu web để xem.")
+    if mcp is not None:
+        print("[serve] Connector MCP cho Claude: bật (/mcp)")
     elif allow_lan:
         print("[serve] ⚠ Đang mở cho cả mạng LAN — ai cùng Wi-Fi cũng xem được dữ liệu sức khoẻ.")
     if open_browser:

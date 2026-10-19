@@ -8,6 +8,7 @@
     python run.py doctor             kiểm tra dữ liệu đang có
     python run.py password           đặt mật khẩu web (bắt buộc khi mở qua tên miền/VPS)
     python run.py backup             sao lưu settings.json + journal.json (zip theo ngày)
+    python run.py mcp-token          tạo/đổi token connector để Claude đọc dữ liệu (--revoke để tắt)
 
 Mọi lệnh nhận --data-dir (mặc định ./data, hoặc biến GARMIN_DATA_DIR).
 """
@@ -107,6 +108,28 @@ def cmd_backup(args) -> int:
     return 0
 
 
+def cmd_mcp_token(args) -> int:
+    import os
+
+    from garmin_health import mcp
+
+    paths = default_paths(args.data_dir)
+    if args.revoke:
+        print("✓ Đã tắt connector." if mcp.revoke(paths) else "Connector chưa bật.")
+        print("  Khởi động lại server để áp dụng.")
+        return 0
+    token = mcp.new_token(paths)
+    host = next(iter((os.getenv("GARMIN_ALLOWED_HOSTS") or "").replace(",", " ").split()), "<tên-miền>")
+    print("✓ Token connector mới — chỉ hiện MỘT lần, giữ như mật khẩu:")
+    print(f"\n  {token}\n")
+    print("Thêm vào Claude (claude.ai trên máy tính → Customize → Connectors → Add custom connector):")
+    print(f"  URL             https://{host}/mcp")
+    print(f"  Request header  Authorization: Bearer {token}")
+    print(f"  (Không có ô header? Dùng URL https://{host}/mcp/{token} và chọn \"No sign in\")")
+    print("Khởi động lại server để áp dụng — token cũ (nếu có) hết hiệu lực.")
+    return 0
+
+
 def cmd_doctor(args) -> int:
     paths = default_paths(args.data_dir)
     summary = read_json(paths.processed / "summary.json")
@@ -174,6 +197,10 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("password", help="đặt mật khẩu web")
     p.set_defaults(fn=cmd_password)
+
+    p = sub.add_parser("mcp-token", help="tạo/đổi token connector MCP cho Claude")
+    p.add_argument("--revoke", action="store_true", help="tắt connector (xoá token)")
+    p.set_defaults(fn=cmd_mcp_token)
 
     p = sub.add_parser("backup", help="sao lưu settings.json + journal.json")
     p.add_argument("--out", help="thư mục chứa file zip (mặc định <data-dir>/backups)")
