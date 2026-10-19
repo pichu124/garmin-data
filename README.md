@@ -14,6 +14,8 @@ theo cách của **WHOOP**, rồi hiển thị bằng giao diện tối giống 
 | Health Monitor | Sức khoẻ | HRV, RHR, nhịp thở, SpO2 có trong ngưỡng bình thường của bạn không |
 | Journal | Nhật ký | Trả lời "hôm qua có uống rượu / ăn muộn…" → app đo thói quen nào làm hồi phục tăng/giảm |
 | Trends / Weekly | Xu hướng | 7 ngày · 30 ngày · 3 tháng · 6 tháng, tổng kết tuần, strain hôm trước → hồi phục hôm sau |
+| Daily Outlook / Insights | Nhận định + Giải thích | Mỗi chỉ số kèm câu giải thích "vì sao" và lời khuyên làm được ngay, sinh từ chính số liệu (không cần AI) |
+| WHOOP Coach | Trò chuyện với Claude | Hỏi đáp bằng gói Claude Pro/Max của bạn qua connector chỉ đọc (mục [Trò chuyện với Claude](#trò-chuyện-với-claude-connector)) |
 
 Ngoài ra vẫn hiện các chỉ số riêng của Garmin (Body Battery, Training
 Readiness, Sleep Score, Stress, VO2 max, HRV Status) để đối chiếu.
@@ -67,8 +69,11 @@ Sinh 150 ngày dữ liệu giả **đúng định dạng JSON của Garmin** và
 ## Giao diện
 
 - **Tổng quan**: 3 vòng Ngủ · Hồi phục · Strain (bấm vào để xem chi tiết),
-  huấn luyện viên (mức hồi phục + strain mục tiêu), hoạt động trong ngày,
+  **Nhận định hôm nay** (yếu tố chính kéo hồi phục lên/xuống, giấc ngủ, cảnh báo sức khoẻ,
+  nên tập bao nhiêu, mấy giờ đi ngủ + thanh strain mục tiêu), hoạt động trong ngày,
   chỉ số chính so với trung bình 30 ngày, nhịp tim cả ngày.
+- **Giải thích & lời khuyên** ở đầu các trang Hồi phục, Ngủ, Strain, Sức khoẻ: câu chữ
+  sinh theo quy tắc từ đúng các số đang hiển thị (`explain.py`), không gửi dữ liệu đi đâu.
 - **Ngủ**: nhu cầu ngủ chi tiết, giai đoạn ngủ, hypnogram, hiệu quả / độ đều,
   kế hoạch ngủ đêm nay, giờ ngủ vs nhu cầu 30 ngày.
 - **Hồi phục**: "vì sao hôm nay như vậy" — mỗi chỉ số cộng/trừ bao nhiêu điểm;
@@ -96,6 +101,7 @@ data/
   settings.json  journal.json
   auth.json                  băm mật khẩu web (chỉ có khi đã chạy `password`)
   backups/                   bản sao lưu settings + journal (lệnh `backup`)
+  mcp.json                   băm token connector Claude (chỉ có khi đã chạy `mcp-token`)
 ```
 
 `data/` đã nằm trong `.gitignore` — dữ liệu sức khoẻ không bao giờ bị commit.
@@ -258,6 +264,75 @@ sudo systemctl restart garmin-data
   ssh -i $key -L 8765:127.0.0.1:8765 ubuntu@<IP-VPS>
   ```
 
+## Trò chuyện với Claude (connector)
+
+Hỏi đáp về số liệu của bạn kiểu WHOOP Coach, bằng **gói Claude Pro/Max có sẵn**, không tốn
+tiền API. App mở một connector MCP **chỉ đọc** ở `/mcp`; trong app Claude, Claude tự gọi vào
+để lấy số rồi trả lời. Máy chủ của Anthropic phải gọi tới được app, nên cần làm xong mục
+[Chạy trên VPS](#chạy-trên-vps) (có HTTPS) trước.
+
+**1. Tạo token trên VPS**
+
+```bash
+cd /opt/garmin-data
+.venv/bin/python run.py mcp-token --data-dir /var/lib/garmin-data
+sudo systemctl restart garmin-data
+```
+
+Lệnh in token **một lần duy nhất**. Ai có token đọc được toàn bộ dữ liệu sức khoẻ, nên giữ như
+mật khẩu. Chạy lại lệnh để đổi token (token cũ hết hiệu lực); `--revoke` để tắt connector.
+Kiểm tra nhanh, phải thấy danh sách công cụ:
+
+```bash
+curl -s https://garmin-cua-ban.duckdns.org/mcp -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 300
+```
+
+**2. Thêm connector** trên máy tính (claude.ai hoặc Claude Desktop): **Customize → Connectors →
++ Add → Add custom connector**.
+
+- Name: `Garmin Health`
+- URL: `https://garmin-cua-ban.duckdns.org/mcp`
+- Đăng nhập: **No sign in**
+- **Request headers**: tên `Authorization`, giá trị `Bearer <token>`
+
+Không thấy mục Request headers thì dùng URL `https://garmin-cua-ban.duckdns.org/mcp/<token>`
+(server che token khi ghi log).
+
+**3. Tạo Project "Garmin Coach"** (nên làm): **Projects → New project**, bật connector
+Garmin Health cho project, rồi dán vào **Instructions**:
+
+```
+Bạn là huấn luyện viên sức khoẻ của tôi, theo kiểu WHOOP Coach. Dữ liệu Garmin của tôi
+nằm trong connector Garmin Health.
+- Trước khi nói về cơ thể, giấc ngủ, tập luyện: gọi công cụ để lấy số thật (get_day,
+  get_days, get_trends, get_journal_insights). Không đoán số.
+- Trích ngày và con số cụ thể; so với mức thường ngày của chính tôi.
+- Lời khuyên làm được ngay: strain mục tiêu, số phút tập, giờ đi ngủ.
+- Ngắn gọn, tiếng Việt, số kiểu 1,234.5.
+- Không chẩn đoán bệnh; dấu hiệu bất thường kéo dài thì khuyên đi khám.
+```
+
+**4. Trên Android**: connector gắn với tài khoản Claude, nên mở app Claude, vào project
+Garmin Coach và hỏi. Anthropic ghi việc *thêm* connector trên điện thoại còn là bản thử nghiệm;
+nếu app chưa thấy connector, cập nhật app hoặc mở claude.ai bằng trình duyệt điện thoại.
+
+**Hỏi gì?** "Nhận định sáng nay", "Vì sao tuần này hồi phục thấp?", "So giấc ngủ tháng 9 với
+tháng 10", "Rượu bia ảnh hưởng tôi thế nào?", "Hôm nay nên chạy bao lâu?". Connector cũng có
+sẵn 3 mẫu câu: *Nhận định sáng nay*, *Tổng kết tuần*, *Thói quen ảnh hưởng thế nào*.
+
+| Công cụ | Claude lấy được gì |
+|---|---|
+| `get_day` | Mọi chỉ số một ngày + phần giải thích của app; ngày mới nhất có kế hoạch ngủ đêm nay |
+| `get_days` | Bảng gọn mỗi ngày một dòng, tối đa 180 ngày |
+| `get_trends` | Trung bình N ngày so với N ngày trước + theo tuần |
+| `get_journal_insights` | Thói quen nào đi kèm hồi phục cao/thấp (Welch) |
+| `get_activities` | Các buổi tập: thời lượng, strain, nhịp tim, vùng tim |
+| `get_methodology` | Mục "Cách tính" ở dưới + HRmax, nhu cầu ngủ nền đang dùng |
+
+Connector **chỉ đọc**: không sửa cài đặt/nhật ký, không đồng bộ Garmin, không thấy mật khẩu
+hay token Garmin. Số liệu Claude đọc sẽ nằm trong cuộc trò chuyện Claude của bạn.
+
 ## Cách tính (tóm tắt)
 
 **Baseline cá nhân**: mỗi chỉ số so với 30 ngày *trước* hôm đó (không gồm hôm
@@ -293,11 +368,15 @@ tối đa 1h30) − ngủ trưa.
 **Nhật ký**: so recovery trung bình của các sáng trả lời *Có* với *Không*
 (cần ≥ 3 mỗi bên); ★ khi |t| ≥ 2 (kiểm định Welch). Đây là tương quan, không phải nhân quả.
 
+**Giải thích & lời khuyên** chỉ diễn đạt lại các số trên: nêu yếu tố cộng/trừ ≥ 3 điểm hồi phục,
+so với mức thường ngày (baseline 30 ngày); số phút Vùng 2/3 còn thiếu để vào strain mục tiêu
+tính bằng cách đảo đường cong strain (`load = −176·ln(1 − strain/21)`) với tải mỗi phút ở 65% / 75% HRR.
+
 ## Phát triển
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest -q          # 94 test, ~1–2 phút, không cần mạng/Garmin
+python -m pytest -q          # 120 test, ~1–2 phút, không cần mạng/Garmin
 ```
 
 Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ SVG tự vẽ
@@ -316,5 +395,7 @@ khi khai trong `GARMIN_ALLOWED_HOSTS`, và khi đó bắt buộc có mật khẩ
 | `garmin_health/server.py` | web server + API đồng bộ / nhật ký / cài đặt / đăng nhập |
 | `garmin_health/auth.py` | mật khẩu web (PBKDF2) + cookie phiên ký HMAC, khoá khi sai nhiều lần |
 | `garmin_health/backup.py` | sao lưu settings.json + journal.json thành zip theo ngày |
+| `garmin_health/explain.py` | giải thích + lời khuyên theo quy tắc cho từng ngày (ghi vào `days/<ngày>.json`) |
+| `garmin_health/mcp.py` | connector MCP chỉ đọc cho Claude (JSON-RPC, token riêng) |
 | `web/` | giao diện: `app.js` khung + router, `core.js` tiện ích chung, `view-*.js` từng màn hình, `charts.js` biểu đồ SVG, `login.html` + `login.js` trang đăng nhập |
 | `scripts/shots.py` | chụp mọi màn hình 390px + 1280px (cần `pip install playwright`, dùng Chrome/Edge có sẵn) |
