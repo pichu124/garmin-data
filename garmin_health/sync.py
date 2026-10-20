@@ -45,6 +45,22 @@ _HAS = {
 }
 
 
+def details_needed(store: RawStore, before: str) -> list[str]:
+    """Buổi tập trước `before` mà ngày đó Garmin trả nhịp tim cả ngày RỖNG và chưa có chi tiết.
+
+    Garmin chỉ giữ nhịp tim/stress theo phút ~4–5 tháng nhưng giữ chi tiết buổi tập lâu dài ⇒ ngày cũ
+    tính strain từ nhịp tim của buổi tập. Ngày còn trong cửa sổ tải lại thì chưa xét (nhịp tim có thể về sau).
+    """
+    out = []
+    for raw in store.activities():
+        a = nz.activity(raw)
+        if not a or a["date"] >= before or store.has_activity_detail(a["id"]) or not store.has("heart_rates", a["date"]):
+            continue
+        if not nz.heart_rates(store.load("heart_rates", a["date"]))["samples"]:
+            out.append(a["id"])
+    return out
+
+
 def plan_quick(store: RawStore, state: dict, today: date) -> list[tuple[str, str]]:
     """(ngày, loại) cần tải trong lượt nhanh.
 
@@ -191,6 +207,20 @@ def sync(
                 store.save_activity(act)
             log(f"[sync] {len(acts) if isinstance(acts, list) else 0} hoạt động")
         done += 1
+        if not quick:
+            needed = details_needed(store, refresh_from)
+            total += len(needed)
+            for act_id in needed:
+                obj = call(lambda a=act_id: client.get_activity_details(a), f"activity_details {act_id}")
+                if obj is not _FAILED:
+                    store.save_activity_detail(act_id, obj)
+                done += 1
+                if progress:
+                    progress(done, total, f"chi tiết buổi tập {act_id}")
+                if pause:
+                    time.sleep(pause)
+            if needed:
+                log(f"[sync] {len(needed)} buổi tập cũ: tải nhịp tim chi tiết để tính strain")
         if not quick:   # hồ sơ (HRmax, vùng tim) hiếm khi đổi — lượt đầy đủ mỗi sáng là đủ
             for name, fn in (("user_settings", client.get_user_profile), ("hr_zones", client.get_heart_rate_zones)):
                 obj = call(fn, name)

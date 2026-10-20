@@ -12,6 +12,8 @@ kiểu EN (`1,234.5`). Xem README.md cho cách dùng và công thức.
 ## Bất biến
 - **Dữ liệu sức khoẻ + token không bao giờ vào git** (`data/`, `data-demo/`, `.env` trong .gitignore).
 - Raw Garmin lưu NGUYÊN VĂN; mọi diễn giải nằm ở `normalize.py`. Đổi công thức ⇒ `build` lại, không tải lại.
+- Garmin chỉ giữ nhịp tim/stress theo phút ~4–5 tháng ⇒ `raw/heart_rates`, `raw/stress` cũ là bản DUY NHẤT:
+  `backup` phải gói kèm; ngày đã mất nhịp tim cả ngày thì strain lấy từ `raw/activity_details` (`source: activities`).
 - Thời gian: epoch ms GMT trong normalize; web dùng "phút kể từ nửa đêm địa phương" (âm = tối hôm trước).
 - Baseline = 30 ngày TRƯỚC ngày đang xét (không gồm hôm nay), cần ≥4 giá trị.
 - Công thức điểm là hàm thuần trong `strain.py` / `sleep_score.py` / `recovery.py`; hằng số hiệu chỉnh
