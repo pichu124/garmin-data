@@ -1,7 +1,7 @@
 """Garmin Health — tải dữ liệu Garmin và phân tích kiểu WHOOP.
 
     python run.py login              đăng nhập Garmin (một lần; lưu token)
-    python run.py sync [--days 180]  tải dữ liệu mới + tính điểm
+    python run.py sync [--days 180]  tải dữ liệu mới + tính điểm (--quick: chỉ hôm nay, cho cron dày)
     python run.py serve [--lan]      mở giao diện http://127.0.0.1:8765
     python run.py demo               xem thử bằng dữ liệu mẫu (không cần Garmin)
     python run.py build              tính lại điểm từ dữ liệu đã tải
@@ -42,7 +42,8 @@ def cmd_sync(args) -> int:
 
     paths = default_paths(args.data_dir)
     try:
-        result = sync(paths, days=args.days, start=date.fromisoformat(args.start) if args.start else None, force=args.force)
+        result = sync(paths, days=args.days, start=date.fromisoformat(args.start) if args.start else None,
+                      force=args.force, quick=args.quick)
     except AuthRequired as exc:
         print(f"✗ Chưa đăng nhập hoặc token hết hạn: {exc}\n  → chạy: python run.py login")
         return 2
@@ -177,6 +178,7 @@ def main(argv=None) -> int:
     p.add_argument("--days", type=int, help="tải lại N ngày gần nhất")
     p.add_argument("--start", help="tải từ ngày YYYY-MM-DD")
     p.add_argument("--force", action="store_true", help="tải lại cả ngày đã có")
+    p.add_argument("--quick", action="store_true", help="chỉ số liệu trong ngày hôm nay (~4 lượt gọi) — cho cron 30 phút")
     p.set_defaults(fn=cmd_sync)
 
     p = sub.add_parser("build", help="tính lại điểm từ dữ liệu đã tải")

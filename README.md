@@ -47,7 +47,20 @@ python run.py serve --open # mở http://127.0.0.1:8765
   `~/.garminconnect/garmin_tokens.json` và tự gia hạn — các lần sau
   (kể cả nút **↻ Đồng bộ** trên giao diện) không cần mật khẩu nữa.
   Token có quyền vào tài khoản Garmin của bạn: giữ như mật khẩu.
-- Muốn lấy nhiều lịch sử hơn: `python run.py sync --days 365`.
+- Muốn lấy nhiều lịch sử hơn: `python run.py sync --start 2023-01-01` (chỉ tải ngày còn thiếu,
+  ~3–5 giây mỗi ngày; Garmin giới hạn tốc độ thì dừng giữa chừng, chạy lại sẽ tải tiếp).
+- Cập nhật số liệu trong ngày: `python run.py sync --quick` chỉ tải phần còn thay đổi (5–10 lượt
+  gọi thay vì ~31) — hợp để chạy định kỳ 30 phút/lần:
+  - mọi lượt: tổng ngày (bước chân, calo, Body Battery), nhịp tim, stress, giấc ngủ (vì giấc trưa
+    được trừ vào nhu cầu ngủ đêm nay) + hoạt động;
+  - HRV đêm qua và Training Readiness buổi sáng: tới khi đồng hồ đã đẩy lên (sau đó không đổi);
+  - cả ngày hôm qua, tới khi lượt đầy đủ trong ngày chạy xong (không sót 23:30–24:00);
+  - không có VO2max (chỉ đổi sau buổi chạy/đi bộ đủ điều kiện) và hồ sơ — lượt đầy đủ sáng hôm sau lấy.
+
+  Garmin trả dữ liệu **theo cả ngày** (mọi điểm của ngày tính tới lúc hỏi) và mỗi ngày × loại là
+  một file bị ghi đè, nên lượt 10:00 tự chứa mọi điểm sau lượt 9:30 — không sót, không trùng; một
+  lượt lỗi mạng thì lượt sau bù. Đừng chạy dày hơn 30 phút: Garmin không có API công khai, gọi quá
+  nhiều sẽ bị trả lỗi 429 hoặc chặn tạm thời.
 - Xem trên **điện thoại** (cùng Wi-Fi): `python run.py serve --lan` rồi mở địa chỉ
   in ra. Trên iPhone/Android có thể "Thêm vào màn hình chính" để mở như app.
   Chế độ này cho mọi máy trong mạng LAN xem được dữ liệu — chỉ dùng ở nhà.
@@ -217,13 +230,37 @@ phiên đăng nhập giữ 90 ngày. Nút **Đăng xuất** nằm trong ⚙ Cài
 **7. Đồng bộ + sao lưu tự động**
 
 ```bash
-(crontab -l 2>/dev/null
- echo "15 9 * * * cd /opt/garmin-data && .venv/bin/python run.py sync --data-dir /var/lib/garmin-data >> /home/ubuntu/garmin-sync.log 2>&1"
+(crontab -l 2>/dev/null | grep -v "garmin-data"
+ echo "15 9 * * * cd /opt/garmin-data && flock -n /tmp/garmin-sync.lock .venv/bin/python run.py sync --data-dir /var/lib/garmin-data >> /home/ubuntu/garmin-sync.log 2>&1"
+ echo "*/30 6-23 * * * cd /opt/garmin-data && flock -n /tmp/garmin-sync.lock .venv/bin/python run.py sync --quick --data-dir /var/lib/garmin-data >> /home/ubuntu/garmin-sync.log 2>&1"
  echo "30 9 * * * cd /opt/garmin-data && .venv/bin/python run.py backup --data-dir /var/lib/garmin-data >> /home/ubuntu/garmin-sync.log 2>&1") | crontab -
 ```
 
-Lệnh này giữ nguyên các dòng cron đã có (ví dụ cron sao lưu của web khác). Giờ trong cron theo
-giờ máy (Asia/Ho_Chi_Minh). Nút **↻ Đồng bộ** trên app vẫn dùng được bất cứ lúc nào.
+- 9:15: đồng bộ đầy đủ (giấc ngủ, HRV đêm qua; tải lại 3 ngày gần nhất, ~31 lượt gọi).
+- Mỗi 30 phút từ 6:00 đến 23:30: `sync --quick` (xem mục Dùng hằng ngày) — 5–10 lượt gọi, cả ngày
+  ~200 lượt. Giấc ngủ đêm qua lên app ngay ở lượt đầu tiên sau khi đồng hồ đồng bộ, không phải
+  đợi 9:15. Đồng hồ cũng chỉ đẩy số liệu lên Garmin khi điện thoại đồng bộ, nên gọi dày hơn không
+  thấy số mới hơn mà dễ bị Garmin chặn.
+- `flock -n`: lượt nào đang chạy thì lượt sau bỏ qua, không chạy chồng nhau.
+
+Lệnh này thay các dòng garmin-data cũ và giữ nguyên dòng cron khác (ví dụ cron sao lưu của
+web khác). Giờ trong cron theo giờ máy (Asia/Ho_Chi_Minh). Nút **↻ Đồng bộ** trên app vẫn dùng
+được bất cứ lúc nào.
+
+**Tải toàn bộ lịch sử** (lần đầu chỉ tải 90 ngày): chạy nền để thoát SSH không bị ngắt, dùng
+chung khoá với cron:
+
+```bash
+cd /opt/garmin-data
+nohup flock /tmp/garmin-sync.lock .venv/bin/python run.py sync --start 2023-01-01 \
+  --data-dir /var/lib/garmin-data > ~/garmin-backfill.log 2>&1 &
+ls /var/lib/garmin-data/raw/summary | wc -l   # số ngày đã có — chạy lại để xem tiến độ
+```
+
+Chọn `--start` gần ngày bắt đầu đeo Garmin: ngày chưa có dữ liệu vẫn tốn 7 lượt gọi và hiện
+thành ngày trống. Mỗi ngày ~3–5 giây (1 năm ≈ 20–30 phút). Garmin giới hạn tốc độ thì lệnh
+dừng (`~/garmin-backfill.log` ghi "giới hạn tốc độ"), dữ liệu đã tải vẫn giữ — đợi ~1 giờ rồi chạy
+lại đúng lệnh trên để tải tiếp.
 
 `backup` ghi `garmin-backup-YYYY-MM-DD.zip` (settings.json + journal.json) vào
 `/var/lib/garmin-data/backups/` và giữ 30 bản mới nhất. Số liệu Garmin không cần sao lưu vì
@@ -378,7 +415,7 @@ tính bằng cách đảo đường cong strain (`load = −176·ln(1 − strain
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest -q          # 120 test, ~1–2 phút, không cần mạng/Garmin
+python -m pytest -q          # 125 test, ~1–2 phút, không cần mạng/Garmin
 ```
 
 Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ SVG tự vẽ
