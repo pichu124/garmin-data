@@ -139,15 +139,18 @@ def test_plan_quick_fetches_only_what_can_still_change(tmp_path):
     store = RawStore(tmp_path)
     t, y = "2026-10-15", "2026-10-14"
     jobs = gsync.plan_quick(store, {}, TODAY)
-    # chưa có giấc ngủ đêm qua, chưa có lượt đầy đủ hôm nay ⇒ hôm nay đủ 6 loại + hôm qua 3 loại
-    assert jobs == [(t, k) for k in gsync.QUICK_KINDS + gsync.MORNING_KINDS] + [(y, k) for k in gsync.QUICK_KINDS]
+    # chưa có HRV/Readiness sáng nay, chưa có lượt đầy đủ hôm nay ⇒ hôm nay 6 loại + hôm qua 3 loại
+    assert jobs == [(t, k) for k in gsync.TODAY_KINDS + gsync.ONCE_KINDS] + [(y, k) for k in gsync.YESTERDAY_KINDS]
     store.save("sleep", t, SLEEP)
     store.save("hrv", t, {"hrvSummary": {"lastNightAvg": 55}})
     store.save("readiness", t, [{"score": 70, "inputContext": "AFTER_WAKEUP_RESET"}])
-    assert gsync.plan_quick(store, {"full_sync_day": y}, TODAY) == [(t, k) for k in gsync.QUICK_KINDS] + [(y, k) for k in gsync.QUICK_KINDS]
-    assert gsync.plan_quick(store, {"full_sync_day": t}, TODAY) == [(t, k) for k in gsync.QUICK_KINDS]
-    store.save("sleep", t, {"dailySleepDTO": {}})   # Garmin trả khung rỗng khi đồng hồ chưa đẩy giấc ngủ
-    assert (t, "sleep") in gsync.plan_quick(store, {"full_sync_day": t}, TODAY)
+    yesterday = [(y, k) for k in gsync.YESTERDAY_KINDS]
+    assert gsync.plan_quick(store, {"full_sync_day": y}, TODAY) == [(t, k) for k in gsync.TODAY_KINDS] + yesterday
+    only_today = gsync.plan_quick(store, {"full_sync_day": t}, TODAY)
+    assert only_today == [(t, k) for k in gsync.TODAY_KINDS]   # sleep vẫn tải lại: giấc trưa ghi vào ngày đó
+    assert "max_metrics" not in {k for _, k in jobs}
+    store.save("hrv", t, {"hrvSummary": {}})   # Garmin trả khung rỗng khi đồng hồ chưa đẩy số đêm qua
+    assert (t, "hrv") in gsync.plan_quick(store, {"full_sync_day": t}, TODAY)
 
 
 def test_full_sync_marks_day_only_when_complete(tmp_path):
@@ -173,8 +176,8 @@ def test_quick_sync_skips_profile_and_old_gaps(tmp_path):
     client.get_activities_by_date = lambda a, b: extra.append(("activities", a, b)) or []
     client.get_user_profile = lambda: extra.append("profile") or {}
     result = gsync.sync(paths, client=client, quick=True, **quiet(today=TODAY))
-    # đồ giả không có giấc ngủ thật ⇒ vẫn thử sleep/hrv/readiness; hôm qua đã chốt bởi lượt đầy đủ hôm nay
-    assert sorted(client.calls) == sorted((k, "2026-10-15") for k in gsync.QUICK_KINDS + gsync.MORNING_KINDS)
+    # đồ giả không có HRV/Readiness thật ⇒ vẫn thử; hôm qua đã chốt bởi lượt đầy đủ hôm nay
+    assert sorted(client.calls) == sorted((k, "2026-10-15") for k in gsync.TODAY_KINDS + gsync.ONCE_KINDS)
     assert extra == [("activities", "2026-10-15", "2026-10-15")]   # không gọi hồ sơ
     assert result["days"] == 1 and result["error_count"] == 0
     assert not RawStore(paths.raw).has("sleep", "2026-10-11")

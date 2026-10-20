@@ -49,11 +49,13 @@ python run.py serve --open # mở http://127.0.0.1:8765
   Token có quyền vào tài khoản Garmin của bạn: giữ như mật khẩu.
 - Muốn lấy nhiều lịch sử hơn: `python run.py sync --start 2023-01-01` (chỉ tải ngày còn thiếu,
   ~3–5 giây mỗi ngày; Garmin giới hạn tốc độ thì dừng giữa chừng, chạy lại sẽ tải tiếp).
-- Cập nhật số liệu trong ngày: `python run.py sync --quick` chỉ tải phần còn thay đổi (4–10 lượt
+- Cập nhật số liệu trong ngày: `python run.py sync --quick` chỉ tải phần còn thay đổi (5–10 lượt
   gọi thay vì ~31) — hợp để chạy định kỳ 30 phút/lần:
-  - số liệu cả ngày hôm nay (bước chân, nhịp tim, stress) + hoạt động;
-  - giấc ngủ / HRV / Training Readiness của đêm qua, tới khi đồng hồ đã đẩy lên;
-  - cả ngày hôm qua, tới khi lượt đầy đủ trong ngày chạy xong (không sót 23:30–24:00).
+  - mọi lượt: tổng ngày (bước chân, calo, Body Battery), nhịp tim, stress, giấc ngủ (vì giấc trưa
+    được trừ vào nhu cầu ngủ đêm nay) + hoạt động;
+  - HRV đêm qua và Training Readiness buổi sáng: tới khi đồng hồ đã đẩy lên (sau đó không đổi);
+  - cả ngày hôm qua, tới khi lượt đầy đủ trong ngày chạy xong (không sót 23:30–24:00);
+  - không có VO2max (chỉ đổi sau buổi chạy/đi bộ đủ điều kiện) và hồ sơ — lượt đầy đủ sáng hôm sau lấy.
 
   Garmin trả dữ liệu **theo cả ngày** (mọi điểm của ngày tính tới lúc hỏi) và mỗi ngày × loại là
   một file bị ghi đè, nên lượt 10:00 tự chứa mọi điểm sau lượt 9:30 — không sót, không trùng; một
@@ -235,7 +237,7 @@ phiên đăng nhập giữ 90 ngày. Nút **Đăng xuất** nằm trong ⚙ Cài
 ```
 
 - 9:15: đồng bộ đầy đủ (giấc ngủ, HRV đêm qua; tải lại 3 ngày gần nhất, ~31 lượt gọi).
-- Mỗi 30 phút từ 6:00 đến 23:30: `sync --quick` (xem mục Dùng hằng ngày) — 4–10 lượt gọi, cả ngày
+- Mỗi 30 phút từ 6:00 đến 23:30: `sync --quick` (xem mục Dùng hằng ngày) — 5–10 lượt gọi, cả ngày
   ~200 lượt. Giấc ngủ đêm qua lên app ngay ở lượt đầu tiên sau khi đồng hồ đồng bộ, không phải
   đợi 9:15. Đồng hồ cũng chỉ đẩy số liệu lên Garmin khi điện thoại đồng bộ, nên gọi dày hơn không
   thấy số mới hơn mà dễ bị Garmin chặn.
