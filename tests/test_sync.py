@@ -126,3 +126,28 @@ def test_persistent_rate_limit_stops_quickly(tmp_path, monkeypatch):
     client = Limited()
     result = gsync.sync(default_paths(tmp_path), client=client, days=90, today=TODAY, pause=0, log=lambda *_: None)
     assert result["aborted"] and len(client.calls) <= 7
+
+
+def test_quick_sync_only_touches_today(tmp_path):
+    paths = default_paths(tmp_path)
+    gsync.sync(paths, client=FakeClient(), days=5, today=TODAY, pause=0, log=lambda *_: None)
+    RawStore(paths.raw).path("sleep", "2026-10-11").unlink()   # lỗ hổng: lượt đầy đủ tải bù, lượt nhanh thì không
+    client = FakeClient()
+    extra = []
+    client.get_activities_by_date = lambda a, b: extra.append(("activities", a, b)) or []
+    client.get_user_profile = lambda: extra.append("profile") or {}
+    result = gsync.sync(paths, client=client, quick=True, today=TODAY, pause=0, log=lambda *_: None)
+    assert sorted(client.calls) == sorted((k, "2026-10-15") for k in gsync.QUICK_KINDS)
+    assert extra == [("activities", "2026-10-15", "2026-10-15")]   # không gọi hồ sơ
+    assert result["calls"] == len(gsync.QUICK_KINDS) and result["days"] == 1 and result["error_count"] == 0
+    assert not RawStore(paths.raw).has("sleep", "2026-10-11")
+
+
+def test_cli_passes_quick_flag(tmp_path, monkeypatch):
+    import run
+
+    seen = {}
+    monkeypatch.setattr(gsync, "sync", lambda paths, **kw: seen.update(kw) or {"error_count": 0})
+    monkeypatch.setattr(run.builder, "build", lambda paths: None)
+    assert run.main(["sync", "--quick", "--data-dir", str(tmp_path)]) == 0
+    assert seen["quick"] is True and seen["days"] is None

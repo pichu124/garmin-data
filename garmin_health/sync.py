@@ -29,6 +29,8 @@ FETCHERS: dict[str, Callable] = {
     "max_metrics": lambda c, d: c.get_max_metrics(d),
 }
 assert set(FETCHERS) == set(DAILY_KINDS)
+# sync --quick: chỉ số liệu HÔM NAY còn thay đổi trong ngày (giấc ngủ/HRV/readiness đã chốt từ sáng)
+QUICK_KINDS = ("summary", "heart_rates", "stress")
 
 
 class AuthRequired(RuntimeError):
@@ -93,6 +95,7 @@ def sync(
     days: int | None = None,
     start: date | None = None,
     force: bool = False,
+    quick: bool = False,
     today: date | None = None,
     pause: float = PAUSE_S,
     log=print,
@@ -104,20 +107,23 @@ def sync(
     today = today or date.today()
     if days and start is None:
         start = today - timedelta(days=days - 1)
-    targets, refresh_from = plan_days(store, today=today, backfill=settings["backfill_days"], start=start)
-
-    jobs = [(d, k) for d in targets for k in DAILY_KINDS if force or d >= refresh_from or not store.has(k, d)]
-    # lượt trước lỗi (mạng/5xx) thì KHÔNG lưu file ⇒ mọi cặp (ngày, loại) còn thiếu
-    # từ ngày cũ nhất đã có đều được thử lại, kể cả khi nằm ngoài cửa sổ tải lại
-    have = store.days()
-    if have and targets:
-        first, stop = date.fromisoformat(have[0]), date.fromisoformat(targets[0])
-        gaps = [((first + timedelta(days=i)).isoformat(), k) for i in range((stop - first).days) for k in DAILY_KINDS]
-        jobs = [j for j in gaps if not store.has(j[1], j[0])] + jobs
-    total = len(jobs) + 2
+    if quick:   # ~4 lượt gọi: đủ nhẹ để cron chạy mỗi 30 phút; ngày cũ/lỗ hổng để lượt đầy đủ buổi sáng lo
+        targets = [today.isoformat()]
+        jobs = [(targets[0], k) for k in QUICK_KINDS]
+    else:
+        targets, refresh_from = plan_days(store, today=today, backfill=settings["backfill_days"], start=start)
+        jobs = [(d, k) for d in targets for k in DAILY_KINDS if force or d >= refresh_from or not store.has(k, d)]
+        # lượt trước lỗi (mạng/5xx) thì KHÔNG lưu file ⇒ mọi cặp (ngày, loại) còn thiếu
+        # từ ngày cũ nhất đã có đều được thử lại, kể cả khi nằm ngoài cửa sổ tải lại
+        have = store.days()
+        if have and targets:
+            first, stop = date.fromisoformat(have[0]), date.fromisoformat(targets[0])
+            gaps = [((first + timedelta(days=i)).isoformat(), k) for i in range((stop - first).days) for k in DAILY_KINDS]
+            jobs = [j for j in gaps if not store.has(j[1], j[0])] + jobs
+    total = len(jobs) + (1 if quick else 2)
     errors: list[str] = []
     done = 0
-    log(f"[sync] {len(targets)} ngày ({targets[0] if targets else '-'} → {today}), {len(jobs)} lượt gọi")
+    log(f"[sync] {'nhanh: ' if quick else ''}{len(targets)} ngày ({targets[0] if targets else '-'} → {today}), {len(jobs)} lượt gọi")
 
     def call(fn, label):
         nonlocal done
@@ -159,11 +165,12 @@ def sync(
                 store.save_activity(act)
             log(f"[sync] {len(acts) if isinstance(acts, list) else 0} hoạt động")
         done += 1
-        for name, fn in (("user_settings", client.get_user_profile), ("hr_zones", client.get_heart_rate_zones)):
-            obj = call(fn, name)
-            if obj is not _FAILED:
-                store.save_profile(name, obj)
-        done += 1
+        if not quick:   # hồ sơ (HRmax, vùng tim) hiếm khi đổi — lượt đầy đủ mỗi sáng là đủ
+            for name, fn in (("user_settings", client.get_user_profile), ("hr_zones", client.get_heart_rate_zones)):
+                obj = call(fn, name)
+                if obj is not _FAILED:
+                    store.save_profile(name, obj)
+            done += 1
     except RateLimited as exc:
         aborted = str(exc)
         errors.append(aborted)
