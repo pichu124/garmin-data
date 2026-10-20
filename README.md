@@ -49,9 +49,16 @@ python run.py serve --open # mở http://127.0.0.1:8765
   Token có quyền vào tài khoản Garmin của bạn: giữ như mật khẩu.
 - Muốn lấy nhiều lịch sử hơn: `python run.py sync --start 2023-01-01` (chỉ tải ngày còn thiếu,
   ~3–5 giây mỗi ngày; Garmin giới hạn tốc độ thì dừng giữa chừng, chạy lại sẽ tải tiếp).
-- Cập nhật số liệu trong ngày: `python run.py sync --quick` chỉ tải hôm nay (~4 lượt gọi thay
-  vì ~31) — hợp để chạy định kỳ 30 phút/lần. Đừng chạy dày hơn: Garmin không có API công khai,
-  gọi quá nhiều sẽ bị trả lỗi 429 hoặc chặn tạm thời.
+- Cập nhật số liệu trong ngày: `python run.py sync --quick` chỉ tải phần còn thay đổi (4–10 lượt
+  gọi thay vì ~31) — hợp để chạy định kỳ 30 phút/lần:
+  - số liệu cả ngày hôm nay (bước chân, nhịp tim, stress) + hoạt động;
+  - giấc ngủ / HRV / Training Readiness của đêm qua, tới khi đồng hồ đã đẩy lên;
+  - cả ngày hôm qua, tới khi lượt đầy đủ trong ngày chạy xong (không sót 23:30–24:00).
+
+  Garmin trả dữ liệu **theo cả ngày** (mọi điểm của ngày tính tới lúc hỏi) và mỗi ngày × loại là
+  một file bị ghi đè, nên lượt 10:00 tự chứa mọi điểm sau lượt 9:30 — không sót, không trùng; một
+  lượt lỗi mạng thì lượt sau bù. Đừng chạy dày hơn 30 phút: Garmin không có API công khai, gọi quá
+  nhiều sẽ bị trả lỗi 429 hoặc chặn tạm thời.
 - Xem trên **điện thoại** (cùng Wi-Fi): `python run.py serve --lan` rồi mở địa chỉ
   in ra. Trên iPhone/Android có thể "Thêm vào màn hình chính" để mở như app.
   Chế độ này cho mọi máy trong mạng LAN xem được dữ liệu — chỉ dùng ở nhà.
@@ -228,9 +235,10 @@ phiên đăng nhập giữ 90 ngày. Nút **Đăng xuất** nằm trong ⚙ Cài
 ```
 
 - 9:15: đồng bộ đầy đủ (giấc ngủ, HRV đêm qua; tải lại 3 ngày gần nhất, ~31 lượt gọi).
-- Mỗi 30 phút từ 6:00 đến 23:30: `sync --quick` chỉ lấy số liệu hôm nay (bước chân, nhịp tim,
-  stress, hoạt động — ~4 lượt gọi), cả ngày ~150 lượt. Đồng hồ cũng chỉ đẩy số liệu lên Garmin
-  khi điện thoại đồng bộ, nên gọi dày hơn không thấy số mới hơn mà dễ bị Garmin chặn.
+- Mỗi 30 phút từ 6:00 đến 23:30: `sync --quick` (xem mục Dùng hằng ngày) — 4–10 lượt gọi, cả ngày
+  ~200 lượt. Giấc ngủ đêm qua lên app ngay ở lượt đầu tiên sau khi đồng hồ đồng bộ, không phải
+  đợi 9:15. Đồng hồ cũng chỉ đẩy số liệu lên Garmin khi điện thoại đồng bộ, nên gọi dày hơn không
+  thấy số mới hơn mà dễ bị Garmin chặn.
 - `flock -n`: lượt nào đang chạy thì lượt sau bỏ qua, không chạy chồng nhau.
 
 Lệnh này thay các dòng garmin-data cũ và giữ nguyên dòng cron khác (ví dụ cron sao lưu của
@@ -405,7 +413,7 @@ tính bằng cách đảo đường cong strain (`load = −176·ln(1 − strain
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest -q          # 122 test, ~1–2 phút, không cần mạng/Garmin
+python -m pytest -q          # 125 test, ~1–2 phút, không cần mạng/Garmin
 ```
 
 Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ SVG tự vẽ

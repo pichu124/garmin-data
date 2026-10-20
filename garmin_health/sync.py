@@ -12,6 +12,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable
 
+from . import normalize as nz
 from .config import Paths, load_settings, read_json, token_dir, write_json
 from .raw_store import DAILY_KINDS, RawStore
 
@@ -29,8 +30,29 @@ FETCHERS: dict[str, Callable] = {
     "max_metrics": lambda c, d: c.get_max_metrics(d),
 }
 assert set(FETCHERS) == set(DAILY_KINDS)
-# sync --quick: chỉ số liệu HÔM NAY còn thay đổi trong ngày (giấc ngủ/HRV/readiness đã chốt từ sáng)
-QUICK_KINDS = ("summary", "heart_rates", "stress")
+# sync --quick (cron 30 phút). Garmin trả dữ liệu THEO CẢ NGÀY (mọi điểm của ngày tính tới lúc hỏi) và mỗi
+# (ngày, loại) là MỘT file ghi đè ⇒ lượt sau tự chứa phần mới hơn lượt trước: không sót, không trùng.
+QUICK_KINDS = ("summary", "heart_rates", "stress")   # thay đổi suốt ngày ⇒ luôn tải lại cả ngày
+MORNING_KINDS = ("sleep", "hrv", "readiness")        # có một lần khi đồng hồ đẩy giấc ngủ lên ⇒ tải tới khi có
+_HAS = {
+    "sleep": lambda raw: nz.sleep(raw) is not None,
+    "hrv": lambda raw: nz.hrv(raw)["last_night"] is not None,
+    "readiness": lambda raw: nz.readiness(raw)["score"] is not None,
+}
+
+
+def plan_quick(store: RawStore, state: dict, today: date) -> list[tuple[str, str]]:
+    """(ngày, loại) cần tải trong lượt nhanh.
+
+    - hôm nay: summary/heart_rates/stress luôn tải lại; sleep/hrv/readiness tới khi đã có số;
+    - hôm qua: summary/heart_rates/stress tới khi lượt ĐẦY ĐỦ của hôm nay chạy xong (nó tải lại 3 ngày)
+      ⇒ không sót 23:30–24:00 hay phần đồng hồ đẩy muộn sáng hôm sau.
+    """
+    t, y = today.isoformat(), (today - timedelta(days=1)).isoformat()
+    jobs = [(t, k) for k in QUICK_KINDS] + [(t, k) for k in MORNING_KINDS if not _HAS[k](store.load(k, t))]
+    if (state.get("full_sync_day") or "") < t:
+        jobs += [(y, k) for k in QUICK_KINDS]
+    return jobs
 
 
 class AuthRequired(RuntimeError):
@@ -107,9 +129,9 @@ def sync(
     today = today or date.today()
     if days and start is None:
         start = today - timedelta(days=days - 1)
-    if quick:   # ~4 lượt gọi: đủ nhẹ để cron chạy mỗi 30 phút; ngày cũ/lỗ hổng để lượt đầy đủ buổi sáng lo
-        targets = [today.isoformat()]
-        jobs = [(targets[0], k) for k in QUICK_KINDS]
+    if quick:   # 4–10 lượt gọi: đủ nhẹ cho cron 30 phút; ngày cũ/lỗ hổng để lượt đầy đủ buổi sáng lo
+        jobs = plan_quick(store, read_json(paths.sync_state, {}) or {}, today)
+        targets = sorted({d for d, _ in jobs})
     else:
         targets, refresh_from = plan_days(store, today=today, backfill=settings["backfill_days"], start=start)
         jobs = [(d, k) for d in targets for k in DAILY_KINDS if force or d >= refresh_from or not store.has(k, d)]
@@ -188,6 +210,8 @@ def sync(
     }
     state = read_json(paths.sync_state, {}) or {}
     state.update(last_sync=result["finished_at"], last_result=result)
+    if not quick and not errors:   # lượt đầy đủ trọn vẹn ⇒ hôm qua đã chốt, lượt nhanh thôi tải lại hôm qua
+        state["full_sync_day"] = today.isoformat()
     write_json(paths.sync_state, state)
     if errors:
         log(f"[sync] {len(errors)} lỗi, ví dụ: {errors[0]}")
