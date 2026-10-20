@@ -106,6 +106,24 @@
     }
     if (st.error) toast(`✗ ${st.error}`, null, false);
     else { toast(`✓ ${st.label}`); const cur = S.date; await loadSummary(); S.date = cur in S.idx ? cur : S.days[S.days.length - 1]?.date; }
+    seenSync = undefined;   // vừa tải xong ⇒ lần hỏi sau chỉ ghi mốc, không tải lại lần nữa
+    render();
+  }
+
+  // cron trên máy chủ (9:15 + mỗi 30 phút) đồng bộ khi trang đang mở: hỏi /api/status (rất nhẹ) mỗi lần quay lại
+  // app và mỗi 5 phút khi đang xem — last_sync đổi thì tải lại số liệu, đang xem ngày mới nhất thì theo ngày mới nhất
+  let seenSync;   // undefined = chưa biết mốc; null = máy chủ chưa đồng bộ lần nào
+  async function refreshIfSynced() {
+    if (S.staticMode || document.hidden || (S.sync && S.sync.running)) return;
+    let st;
+    try { st = await authGate(await fetch('api/status', { cache: 'no-store' })).json(); } catch (e) { return; }
+    const last = st.last_sync ?? null;
+    if (seenSync === undefined || last === seenSync) { seenSync = last; return; }
+    seenSync = last;
+    const latest = S.days.length && S.date === S.days[S.days.length - 1].date;
+    const cur = S.date;
+    try { await loadSummary(); } catch (e) { return; }
+    S.date = !latest && cur in S.idx ? cur : S.days[S.days.length - 1]?.date;
     render();
   }
 
@@ -213,7 +231,9 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) hiddenAt = Date.now();
     else if (hiddenAt !== null && Date.now() - hiddenAt >= STALE_MS && !S.staticMode) location.reload();
+    else refreshIfSynced();
   });
+  setInterval(refreshIfSynced, 5 * 60 * 1000);
   document.addEventListener('keydown', e => {
     if (e.target.closest('input,select,textarea') || !S.days.length || S.tab === 'trends') return;
     const i = S.idx[S.date];
@@ -228,6 +248,7 @@
       try {
         const st = await authGate(await fetch('api/status', { cache: 'no-store' })).json();
         S.auth = !!st.auth;
+        seenSync = st.last_sync ?? null;
         if (st.sync.running) pollSync();
       } catch (e) { /* server tĩnh */ }
     }

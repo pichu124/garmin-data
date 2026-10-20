@@ -102,8 +102,9 @@ Sinh 150 ngày dữ liệu giả **đúng định dạng JSON của Garmin** và
 - Bấm nhãn ngày ở trên cùng để mở **lịch tháng** (mỗi ngày tô màu theo hồi phục);
   phím ← → để chuyển ngày; mỗi biểu đồ có nút **Bảng** để xem số liệu dạng bảng.
 - ⚙ **Cài đặt**: nhu cầu ngủ nền, nhịp tim tối đa, giờ muốn dậy.
-- Mở lại app sau ≥ 30 phút ở nền: trang tự tải lại (số liệu của lần đồng bộ mới nhất,
-  giao diện mới nếu máy chủ vừa cập nhật).
+- Mỗi lần mở lại app (và mỗi 5 phút khi đang xem) app hỏi máy chủ có lượt đồng bộ mới không — có thì
+  tự cập nhật số; ở nền ≥ 30 phút thì tải lại cả trang (nhận giao diện mới nếu máy chủ vừa cập nhật).
+  Số chỉ mới khi đồng hồ đã đẩy dữ liệu lên Garmin qua app Garmin Connect trên điện thoại.
 
 ## Dữ liệu nằm ở đâu
 
