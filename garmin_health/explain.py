@@ -209,6 +209,8 @@ def strain(day: dict, *, sex: str | None = None) -> dict:
     partial = day.get("partial")
     lines = [f"Strain đến hiện tại {_n(score, 1)} (mức {_level(score)})." if partial
              else f"Strain cả ngày {_n(score, 1)} — mức {_level(score)}."]
+    if s.get("source") == "activities":
+        lines.append("Garmin không còn nhịp tim cả ngày của ngày này — strain chỉ tính từ buổi tập, thiếu phần đi lại.")
     advice: list[str] = []
     target = s.get("target")
     if target:

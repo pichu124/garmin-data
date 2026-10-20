@@ -65,3 +65,15 @@ def test_profile_prefers_default_zone():
     zones = [{"sport": "RUNNING", "maxHeartRateUsed": 195}, {"sport": "DEFAULT", "maxHeartRateUsed": 188}]
     p = nz.profile({"userData": {"gender": "FEMALE", "birthDate": "1990-01-02"}, "userSleep": {"wakeTime": 23400}}, zones)
     assert p == {"sex": "female", "birth_year": 1990, "hr_max": 188, "wake_min": 390}
+
+
+def test_activity_hr_reads_descriptor_positions():
+    from garmin_health import normalize as nz
+
+    raw = {"metricDescriptors": [{"key": "sumDistance", "metricsIndex": 0}, {"key": "directHeartRate", "metricsIndex": 2},
+                                 {"key": "directTimestamp", "metricsIndex": 1}],
+           "activityDetailMetrics": [{"metrics": [5.0, 1.751536880e12, 151.0]}, {"metrics": [1.0, 1.751536877e12, 150.0]},
+                                     {"metrics": [9.0, 1.751536883e12, None]}, {"metrics": [9.0]}, "rác"]}
+    assert nz.activity_hr(raw) == [(1751536877000, 150.0), (1751536880000, 151.0)]
+    assert nz.activity_hr({"metricDescriptors": [{"key": "directHeartRate", "metricsIndex": 0}]}) == []
+    assert nz.activity_hr(None) == []

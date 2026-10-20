@@ -288,6 +288,27 @@ def activity(raw: Any) -> dict | None:
     }
 
 
+def activity_hr(raw: Any) -> list[tuple[int, float]]:
+    """Chi tiết buổi tập (get_activity_details) → [(epoch ms, nhịp tim)] theo thời gian.
+
+    Mỗi dòng activityDetailMetrics là một mảng giá trị; vị trí từng đại lượng nằm ở metricDescriptors.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    idx = {d.get("key"): d.get("metricsIndex") for d in raw.get("metricDescriptors") or [] if isinstance(d, dict)}
+    ti, hi = idx.get("directTimestamp"), idx.get("directHeartRate")
+    if not isinstance(ti, int) or not isinstance(hi, int):
+        return []
+    out = []
+    for row in raw.get("activityDetailMetrics") or []:
+        m = row.get("metrics") if isinstance(row, dict) else None
+        if isinstance(m, list) and len(m) > max(ti, hi):
+            t, v = parse_ts(m[ti]), num(m[hi])
+            if t is not None and v is not None and v > 0:
+                out.append((t, v))
+    out.sort()
+    return out
+
+
 def profile(user_settings: Any, hr_zones: Any) -> dict:
     data = _dig(user_settings, "userData") or {}
     sex = str(data.get("gender") or "").lower() or None

@@ -39,7 +39,9 @@ Khi tư vấn: luôn gọi công cụ để lấy số thật (get_day cho một
 get_journal_insights cho thói quen, get_methodology cho công thức), trích ngày + con số cụ thể, so với baseline
 của chính người dùng thay vì chuẩn chung. Trả lời tiếng Việt, số kiểu 1,234.5. Không chẩn đoán bệnh: dấu hiệu bất
 thường kéo dài (SpO2 thấp, nhịp tim nghỉ tăng cùng nhịp thở) thì khuyên gặp bác sĩ. Đây là ước lượng theo nguyên
-lý WHOOP, không phải số của WHOOP."""
+lý WHOOP, không phải số của WHOOP.
+Garmin chỉ giữ nhịp tim/stress theo phút ~4–5 tháng: ngày cũ hơn có strain.source = "activities" (strain chỉ từ
+buổi tập, thấp hơn thực tế) và không có stress."""
 
 _DATE = {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"}
 TOOLS = [

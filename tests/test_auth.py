@@ -249,6 +249,30 @@ def test_backup_zips_only_user_files(tmp_path):
         assert json.loads(zf.read("journal.json"))["entries"]["2026-10-18"] == {"alcohol": True}
 
 
+def test_backup_includes_irreplaceable_raw_and_restores(tmp_path):
+    """Garmin xoá nhịp tim/stress theo phút sau ~4–5 tháng ⇒ backup phải mang theo, giải nén là khôi phục."""
+    from garmin_health.backup import backup
+    from garmin_health.config import default_paths, save_settings
+    from garmin_health.raw_store import RawStore
+
+    paths = default_paths(tmp_path / "d")
+    save_settings(paths, {"sleep_baseline_h": 8})
+    store = RawStore(paths.raw)
+    store.save("heart_rates", "2026-05-01", {"heartRateValues": [[1, 60]]})
+    store.save("stress", "2026-05-01", {"stressValuesArray": [[1, 20]]})
+    store.save("sleep", "2026-05-01", {"dailySleepDTO": {}})   # Garmin còn giữ ⇒ không cần sao lưu
+    set_password(paths, PW, iterations=FAST)
+    mcp_token = __import__("garmin_health.mcp", fromlist=["new_token"]).new_token(paths)
+    target = backup(paths, today=date(2026, 10, 20))
+    with zipfile.ZipFile(target) as zf:
+        names = sorted(zf.namelist())
+        assert names == ["raw/heart_rates/2026-05-01.json", "raw/stress/2026-05-01.json", "settings.json"]
+        zf.extractall(tmp_path / "moi")
+    restored = RawStore(default_paths(tmp_path / "moi").raw)
+    assert restored.load("heart_rates", "2026-05-01") == {"heartRateValues": [[1, 60]]}
+    assert mcp_token not in target.read_bytes().decode("latin-1")
+
+
 def test_backup_keeps_newest(tmp_path):
     from garmin_health.backup import backup
     from garmin_health.config import default_paths, save_settings

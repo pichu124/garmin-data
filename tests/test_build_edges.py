@@ -91,3 +91,42 @@ def test_sleep_offset_doubled_by_garmin_is_ignored():
 def test_weekly_strain_skips_partial_today():
     days = [{"date": "2026-10-12", "strain": {"score": 12.0}}, {"date": "2026-10-13", "strain": {"score": 2.0}, "partial": True}]
     assert insights.weekly(days)[0]["strain"] == 12.0
+
+
+def test_strain_from_activity_hr_when_all_day_hr_is_gone(demo_summary, tmp_path):
+    """Ngày cũ Garmin đã xoá nhịp tim cả ngày: strain tính từ nhịp tim của buổi tập, ghi rõ nguồn."""
+    import json
+    import shutil
+
+    from garmin_health import build, explain
+    from garmin_health import normalize as nz
+    from garmin_health.config import default_paths
+    from garmin_health.raw_store import RawStore
+
+    src, summary = demo_summary
+    shutil.copytree(src.data, tmp_path / "d")
+    paths = default_paths(tmp_path / "d")
+    store = RawStore(paths.raw)
+    day = next(d for d in summary["days"][40:] if d["activities"] and d["activities"][0]["strain"])
+    act = day["activities"][0]
+    raw_act = next(a for a in store.activities() if str(a["activityId"]) == act["id"])
+    a = nz.activity(raw_act)
+    hr = nz.heart_rates(store.load("heart_rates", day["date"]))["samples"]
+    inside = [(t, v) for t, v in hr if a["start"] <= t < a["start"] + a["duration_s"] * 1000]
+    store.save_activity_detail(act["id"], {
+        "metricDescriptors": [{"key": "directTimestamp", "metricsIndex": 0}, {"key": "directHeartRate", "metricsIndex": 1}],
+        "activityDetailMetrics": [{"metrics": [float(t), v]} for t, v in inside],
+    })
+    store.save("heart_rates", day["date"], {"heartRateValues": None})   # Garmin đã xoá
+
+    out = build.build(paths, now=NOW, log=lambda *_: None)
+    new = next(d for d in out["days"] if d["date"] == day["date"])
+    assert new["strain"]["source"] == "activities"
+    assert 0 < new["strain"]["score"] <= day["strain"]["score"]           # thiếu phần đi lại trong ngày
+    assert new["activities"][0]["strain"] == act["strain"]                # cùng nhịp tim ⇒ cùng strain buổi tập
+    other = next(d for d in out["days"] if d["date"] != day["date"] and d["strain"])
+    assert "source" not in other["strain"]
+    det = json.loads((paths.processed / "days" / f"{day['date']}.json").read_text(encoding="utf-8"))
+    assert det["hr"] and len(det["hr"]) <= len(inside)                    # biểu đồ nhịp tim chỉ còn buổi tập
+    assert any("chỉ tính từ buổi tập" in x for x in det["explain"]["strain"]["lines"])
+    assert explain.strain(new)["lines"][1].startswith("Garmin không còn nhịp tim cả ngày")

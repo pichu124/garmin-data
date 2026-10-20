@@ -3,6 +3,7 @@
 Giữ raw để tính lại điểm (đổi công thức, đổi cài đặt) mà không phải tải lại.
     raw/<kind>/<YYYY-MM-DD>.json   kind ∈ DAILY_KINDS
     raw/activities/<id>.json
+    raw/activity_details/<id>.json  nhịp tim theo giây của buổi tập — chỉ cho ngày Garmin đã xoá nhịp tim cả ngày
     raw/profile/{user_settings,hr_zones}.json
 """
 from __future__ import annotations
@@ -59,6 +60,22 @@ class RawStore:
                 obj = read_json(p)
                 if isinstance(obj, dict):
                     yield obj
+
+    # --- chi tiết hoạt động ---
+    def _detail_path(self, act_id: str) -> Path:
+        if not str(act_id).isdigit():
+            raise ValueError(f"bad activity id {act_id}")
+        return self.root / "activity_details" / f"{act_id}.json"
+
+    def save_activity_detail(self, act_id: str, obj: Any) -> None:
+        write_json(self._detail_path(act_id), EMPTY if obj in (None, {}, []) else obj, compact=True)
+
+    def has_activity_detail(self, act_id: str) -> bool:
+        return self._detail_path(act_id).is_file()
+
+    def load_activity_detail(self, act_id: str) -> Any:
+        obj = read_json(self._detail_path(act_id))
+        return None if obj == EMPTY else obj
 
     # --- hồ sơ ---
     def save_profile(self, name: str, obj: Any) -> None:

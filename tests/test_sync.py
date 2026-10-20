@@ -215,3 +215,31 @@ def test_cli_passes_quick_flag(tmp_path, monkeypatch):
     monkeypatch.setattr(run.builder, "build", lambda paths: None)
     assert run.main(["sync", "--quick", "--data-dir", str(tmp_path)]) == 0
     assert seen["quick"] is True and seen["days"] is None
+
+
+DETAIL_EMPTY = {"metricDescriptors": [], "activityDetailMetrics": []}
+
+
+def test_old_days_fetch_activity_details_once(tmp_path):
+    """Garmin xoá nhịp tim cả ngày sau ~4–5 tháng ⇒ ngày cũ tải nhịp tim của buổi tập (một lần)."""
+    paths = default_paths(tmp_path)
+    store = RawStore(paths.raw)
+    store.save("heart_rates", "2026-09-01", {"heartRateValues": None})         # Garmin đã xoá
+    store.save("heart_rates", "2026-09-02", {"heartRateValues": [[1, 60]]})    # còn nhịp tim cả ngày
+    store.save("heart_rates", "2026-10-14", {})                                # trong cửa sổ tải lại: chưa xét
+    for act_id, d in ((11, "2026-09-01"), (12, "2026-09-02"), (13, "2026-10-14")):
+        store.save_activity({"activityId": act_id, "startTimeGMT": f"{d} 10:00:00", "startTimeLocal": f"{d} 17:00:00", "duration": 3600})
+    assert gsync.details_needed(store, "2026-10-11") == ["11"]
+
+    class Client(FakeClient):
+        def get_activity_details(self, act_id):
+            self.calls.append(("details", act_id))
+            return DETAIL_EMPTY
+
+    first, again, quick = Client(), Client(), Client()
+    gsync.sync(paths, client=first, **quiet(today=TODAY))
+    assert [c for c in first.calls if c[0] == "details"] == [("details", "11")]
+    assert store.has_activity_detail("11") and not store.has_activity_detail("12")
+    gsync.sync(paths, client=again, **quiet(today=TODAY))
+    gsync.sync(paths, client=quick, quick=True, **quiet(today=TODAY))
+    assert not any(c[0] == "details" for c in again.calls + quick.calls)

@@ -191,10 +191,15 @@ def compute_days(norm: dict[str, dict], acts_by_day: dict[str, list[dict]], prof
 
         # --- Strain ---
         samples = n["hr"]["samples"]
+        from_activities = not samples
+        if from_activities:   # Garmin đã xoá nhịp tim cả ngày (~4–5 tháng) ⇒ chỉ còn nhịp tim của buổi tập
+            samples = sorted(p for a in acts_by_day.get(d, []) for p in a.get("hr") or [])
         strain_block = None
         if samples:
             c = st.cardio_load(samples, rhr=rhr_for_load, hr_max=profile["hr_max"], sex=profile["sex"], t0=day0, t1=day0 + DAY_MS)
             strain_block = {"score": st.strain_from_load(c.load), "load": round(c.load, 1), **_load_fields(c)}
+            if from_activities:
+                strain_block["source"] = "activities"   # thiếu phần đi lại trong ngày
         # hoạt động vắt qua nửa đêm cần cả mẫu HR của ngày sau
         next_samples = norm[dates[i + 1]]["hr"]["samples"] if i + 1 < len(dates) else []
         act_samples = samples + next_samples
@@ -270,6 +275,7 @@ def compute_days(norm: dict[str, dict], acts_by_day: dict[str, list[dict]], prof
             "activities": activities,
             "journal": journal["entries"].get(d),
             "_tz": tz,
+            "_samples": samples,
         })
     return out
 
@@ -307,7 +313,7 @@ def day_detail(day: dict, n: dict, next_n: dict | None = None) -> dict:
     return {
         "date": d,
         "next_sleep_start_min": next_start if next_start is not None and 0 <= next_start < 1440 else None,
-        "hr": mins(n["hr"]["samples"], 0, 1440),
+        "hr": mins(day.get("_samples", n["hr"]["samples"]), 0, 1440),
         "stress": mins(n["stress"]["stress"], 0, 1440),
         "body_battery": mins(n["stress"]["body_battery"], 0, 1440),
         "sleep": sleep,
@@ -364,6 +370,8 @@ def build(paths: Paths, *, now: datetime | None = None, log=print) -> dict:
     now = now or datetime.now(timezone.utc)
 
     acts = [a for a in (nz.activity(x) for x in store.activities()) if a]
+    for a in acts:   # chỉ ngày cũ mới có chi tiết (sync tải khi Garmin đã xoá nhịp tim cả ngày)
+        a["hr"] = nz.activity_hr(store.load_activity_detail(a["id"])) if store.has_activity_detail(a["id"]) else []
     acts_by_day: dict[str, list[dict]] = {}
     for a in acts:
         acts_by_day.setdefault(a["date"], []).append(a)
@@ -384,6 +392,7 @@ def build(paths: Paths, *, now: datetime | None = None, log=print) -> dict:
         details.append(day_detail(day, norm[day["date"]], next_n))
     for day in days:
         day.pop("_tz", None)
+        day.pop("_samples", None)
         for a in day["activities"]:
             a.pop("start_min", None)
             a.pop("end_min", None)

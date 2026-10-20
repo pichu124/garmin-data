@@ -111,15 +111,21 @@ Sinh 150 ngày dữ liệu giả **đúng định dạng JSON của Garmin** và
 data/
   raw/<loại>/<ngày>.json     JSON gốc từ Garmin (giữ để tính lại không cần tải lại)
   raw/activities/<id>.json
+  raw/activity_details/<id>.json  nhịp tim theo giây của buổi tập — chỉ cho ngày cũ (xem dưới)
   processed/summary.json     điểm mọi ngày (giao diện đọc file này)
   processed/days/<ngày>.json chuỗi nhịp tim / stress / giai đoạn ngủ trong ngày
   settings.json  journal.json
   auth.json                  băm mật khẩu web (chỉ có khi đã chạy `password`)
-  backups/                   bản sao lưu settings + journal (lệnh `backup`)
+  backups/                   bản sao lưu (lệnh `backup`)
   mcp.json                   băm token connector Claude (chỉ có khi đã chạy `mcp-token`)
 ```
 
 `data/` đã nằm trong `.gitignore` — dữ liệu sức khoẻ không bao giờ bị commit.
+
+**Garmin chỉ giữ nhịp tim và stress theo phút khoảng 4–5 tháng** (giấc ngủ, HRV, tổng ngày và
+buổi tập thì giữ lâu). Vì vậy `raw/heart_rates` và `raw/stress` của các ngày cũ hơn **chỉ còn trên
+máy này** — lệnh `backup` gói kèm hai thư mục đó. Ngày Garmin đã xoá nhịp tim cả ngày thì lượt
+đồng bộ đầy đủ tải nhịp tim chi tiết của từng buổi tập (một lần mỗi buổi) để vẫn tính được strain.
 Đổi công thức hoặc cài đặt ⇒ `python run.py build` tính lại từ raw trong vài giây.
 
 ## Chạy trên VPS
@@ -258,14 +264,15 @@ ls /var/lib/garmin-data/raw/summary | wc -l   # số ngày đã có — chạy l
 ```
 
 Chọn `--start` gần ngày bắt đầu đeo Garmin: ngày chưa có dữ liệu vẫn tốn 7 lượt gọi và hiện
-thành ngày trống. Mỗi ngày ~3–5 giây (1 năm ≈ 20–30 phút). Garmin giới hạn tốc độ thì lệnh
+thành ngày trống. Ngày cũ hơn ~4–5 tháng không còn nhịp tim/stress theo phút trên Garmin: giấc ngủ,
+HRV, hồi phục vẫn đủ, strain chỉ tính từ buổi tập, không có stress. Mỗi ngày ~3–5 giây (1 năm ≈ 20–30 phút). Garmin giới hạn tốc độ thì lệnh
 dừng (`~/garmin-backfill.log` ghi "giới hạn tốc độ"), dữ liệu đã tải vẫn giữ — đợi ~1 giờ rồi chạy
 lại đúng lệnh trên để tải tiếp.
 
-`backup` ghi `garmin-backup-YYYY-MM-DD.zip` (settings.json + journal.json) vào
-`/var/lib/garmin-data/backups/` và giữ 30 bản mới nhất. Số liệu Garmin không cần sao lưu vì
-`sync --days 365` tải lại được, còn nhật ký và cài đặt chỉ có trên VPS. **Bản sao lưu vẫn
-nằm trên VPS**, mà Oracle có thể tắt hoặc thu hồi máy rỗi hay vượt hạn mức Always Free
+`backup` ghi `garmin-backup-YYYY-MM-DD.zip` vào `/var/lib/garmin-data/backups/` và giữ 30 bản
+mới nhất. Zip gồm phần **không tải lại được**: settings.json, journal.json và `raw/heart_rates`,
+`raw/stress` (Garmin xoá bản theo phút sau ~4–5 tháng). Phần còn lại `sync --start` tải lại được.
+**Bản sao lưu vẫn nằm trên VPS**, mà Oracle có thể tắt hoặc thu hồi máy rỗi hay vượt hạn mức Always Free
 ([hạn mức hiện tại](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm),
 nên kiểm trong Console). Thỉnh thoảng kéo về Windows:
 
@@ -389,6 +396,8 @@ Banister `x·0,64·e^(1,92x)` mỗi phút (nữ: 0,86 và 1,67), bỏ qua dướ
 RHR trong %HRR = trung bình RHR 30 ngày trước hôm đó (chưa đủ 4 ngày thì dùng
 RHR hôm đó) — một đêm RHR thấp bất thường không thổi phồng strain cả ngày.
 HRmax lấy theo thứ tự: cài đặt → vùng tim trên Garmin → 208 − 0,7·tuổi → dữ liệu.
+Ngày Garmin đã xoá nhịp tim cả ngày (cũ hơn ~4–5 tháng): cùng công thức trên nhịp tim theo giây
+của các buổi tập trong ngày (`strain.source = "activities"`) — thấp hơn thực tế vì thiếu phần đi lại.
 Vùng 1–5 = 50–60 / 60–70 / 70–80 / 80–90 / 90–100% HRR. **Nhẹ 20–50% HRR**
 (đi lại, việc nhà) dưới Vùng 1 nhưng vẫn có tải, nên ngày chỉ đi lại có strain
 dù vùng 1–5 đều 0 phút; `light_min` là số phút nhẹ, `load_pct` là % tải theo
@@ -415,7 +424,7 @@ tính bằng cách đảo đường cong strain (`load = −176·ln(1 − strain
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest -q          # 125 test, ~1–2 phút, không cần mạng/Garmin
+python -m pytest -q          # 129 test, ~1–2 phút, không cần mạng/Garmin
 ```
 
 Python thuần (không pandas/numpy); web là HTML/CSS/JS thuần, biểu đồ SVG tự vẽ
