@@ -10,10 +10,11 @@
     strain: '#0a84d6', sleep: '#a5b4fc', neutral: '#e6ebef', hrv: '#16ec06',
     zones: ['#9fd3f7', '#5fb4ef', '#2a95e3', '#0a74c4', '#0a4f8a'],
   };
+  // verdict + msg = câu trả lời "hôm nay tập nặng tới đâu" — giống hệt explain.VERDICT (test_explain kiểm)
   const ZONE = {
-    green: { color: C.green, label: 'Hồi phục tốt', msg: 'Cơ thể đã sẵn sàng — hôm nay có thể đẩy cường độ cao.' },
-    yellow: { color: C.yellow, label: 'Hồi phục vừa', msg: 'Hồi phục ở mức vừa — giữ cường độ vừa phải, ưu tiên kỹ thuật.' },
-    red: { color: C.red, label: 'Cần nghỉ ngơi', msg: 'Cơ thể đang chịu tải — ưu tiên phục hồi: tập nhẹ, ngủ sớm, uống đủ nước.' },
+    green: { color: C.green, label: 'Hồi phục tốt', verdict: 'Tập nặng được', msg: 'Cơ thể đã sẵn sàng — hợp để tập nặng, chạy nhanh hoặc thi đấu.' },
+    yellow: { color: C.yellow, label: 'Hồi phục vừa', verdict: 'Tập vừa sức', msg: 'Đủ sức để tập nhưng giữ cường độ vừa (aerobic, kỹ thuật) — đừng dồn bài nặng.' },
+    red: { color: C.red, label: 'Cần nghỉ ngơi', verdict: 'Nghỉ ngơi chủ động', msg: 'Cơ thể chưa hồi phục — chỉ vận động nhẹ (đi bộ, giãn cơ, yoga) và ngủ sớm.' },
   };
   const ACT_TYPES = {
     running: 'Chạy bộ', treadmill_running: 'Chạy máy', trail_running: 'Chạy địa hình', cycling: 'Đạp xe', indoor_cycling: 'Đạp xe trong nhà',
@@ -154,7 +155,7 @@
   function strainRing(d, size) {
     const st = d.strain || {};
     const t = st.target;
-    return ring({ frac: (st.score || 0) / 21, color: C.strain, text: isNum(st.score) ? fmt.n(st.score, 1) : '—', size, band: t ? [t[0] / 21, t[1] / 21] : null, sub: d.partial ? 'ĐANG TÍNH' : null });
+    return ring({ frac: (st.score || 0) / 21, color: C.strain, text: isNum(st.score) ? fmt.n(st.score, 1) : '—', size, band: t ? [t[0] / 21, t[1] / 21] : null, sub: d.partial && size >= 100 ? 'ĐANG TÍNH' : null });   // vòng nhỏ: chữ phụ không đọc được
   }
   function sleepRing(d, size) {
     const sl = d.sleep;
@@ -220,7 +221,7 @@
   }
 
   const GHA = window.GHA = {
-    S, C, icon, mount, takeMounts, authGate, loadSummary, setSummary, getDetail, post,
+    S, C, ZONE, icon, mount, takeMounts, authGate, loadSummary, setSummary, getDetail, post,
     day, val, isNum, prevAvg, trendBadge, dateLabel, zoneOf, actName, card, chartCard, tableOf, lastN, tile, go,
     recoveryRing, strainRing, sleepRing, activityList, hrCard, vitalLine, explainBody, explainCard,
     render: null,   // app.js gán

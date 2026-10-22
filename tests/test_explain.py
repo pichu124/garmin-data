@@ -153,9 +153,60 @@ def test_build_writes_explain_into_day_details(demo_summary):
     for i, d in enumerate(days):
         det = json.loads((paths.processed / "days" / f"{d['date']}.json").read_text(encoding="utf-8"))
         ex = det["explain"]
-        assert set(ex) == {"outlook", "recovery", "sleep", "strain", "health"}
+        assert set(ex) == {"outlook", "recovery", "sleep", "strain", "health", "coach"}
+        co = ex.pop("coach")
         for sec in ex.values():
             for line in sec["lines"] + sec["advice"]:
                 assert line and "None" not in line and "nan" not in line.split()
         planned = any(x.startswith("Đêm nay") for x in ex["sleep"]["advice"])
         assert planned == (i == len(days) - 1)   # kế hoạch ngủ chỉ cho đêm nay
+        assert (co["tonight"] is not None) == planned
+        assert co["zone"] == (d["recovery"]["zone"] if d["recovery"]["score"] is not None else None)
+        texts = [co["verdict"], co["summary"], *(w["text"] for w in co["why"]), *co["health"]]
+        texts += [x["text"] for x in (co["strain"], co["tonight"]) if x]
+        for t in texts:
+            assert t and "None" not in t and "nan" not in t.split()
+
+
+def test_coach_answers_how_hard_today():
+    planner = {"wake": "06:55", "need": {"total_h": 8.93, "debt_h": 1.18},
+               "options": [{"key": "peak", "pct": 100, "bedtime": "21:18"}, {"key": "perform", "pct": 85, "bedtime": "22:45"},
+                           {"key": "get_by", "pct": 70, "bedtime": "00:11"}]}
+    day = make_day(partial=True, strain={"score": 4.0, "target": [9.8, 12.8]}, journal={"alcohol": True, "meditation": True})
+    co = explain.coach(day, planner=planner, questions=QUESTIONS, sex="male")
+    assert (co["zone"], co["verdict"]) == ("yellow", "Tập vừa sức")
+    # yếu tố lớn nhất trước, có dấu; thói quen tốt (thiền) không bị kể là lý do xấu
+    assert co["why"][0] == {"key": "hrv", "text": "HRV 40 ms · thấp hơn thường ngày", "pts": -12, "good": False}
+    assert co["why"][1] == {"key": "sleep", "text": "Hiệu suất ngủ 88%", "pts": 4, "good": True}
+    assert co["why"][-1] == {"key": "journal", "text": "Nhật ký: Uống rượu bia", "pts": None, "good": False}
+    m2, m3 = explain.minutes_to_reach(4.0, 9.8, explain.ZONE2_X, "male"), explain.minutes_to_reach(4.0, 9.8, explain.ZONE3_X, "male")
+    assert co["strain"]["status"] == "below"
+    assert co["strain"]["text"] == f"Còn khoảng {m2} phút Vùng 2 (vẫn nói chuyện được) hoặc {m3} phút Vùng 3 để vào vùng tối ưu."
+    assert co["tonight"]["bedtime"] == "22:45" and co["tonight"]["bedtime_peak"] == "21:18"
+    assert co["tonight"]["text"] == "Lên giường trước 22:45 (đạt 85% nhu cầu), lý tưởng 21:18 để ngủ đủ 8h56 — dậy 06:55."
+    assert co["health"] == ["HRV 40 ms — thấp hơn ngưỡng bình thường của bạn (41–59)."]
+
+
+def test_coach_red_day_and_past_days():
+    red = make_day(partial=True, recovery={"score": 20, "zone": "red"}, strain={"score": 2.0, "target": [5.3, 8.3]})
+    co = explain.coach(red)
+    assert co["verdict"] == "Nghỉ ngơi chủ động"
+    assert co["strain"]["text"].startswith("Chỉ cần vận động nhẹ") and "Vùng 3" not in co["strain"]["text"]
+    assert co["tonight"] is None   # chỉ ngày mới nhất mới có kế hoạch ngủ
+    over = explain.coach(make_day(strain={"score": 15.2}))
+    assert over["strain"]["status"] == "over" and over["strain"]["text"].startswith("Vượt vùng tối ưu 9.8–12.8 —")
+    assert explain.coach(make_day(strain={"score": 11.0}))["strain"]["status"] == "in"
+    assert explain.coach(make_day(strain={"score": None}))["strain"] is None
+    cal = explain.coach(make_day(recovery={"score": None, "calibrating": True, "contributions": {}}))
+    assert (cal["zone"], cal["verdict"], cal["why"]) == (None, "Đang hiệu chỉnh", [])
+    assert explain.coach(make_day(recovery=None))["verdict"] == "Chưa có điểm hồi phục"
+
+
+def test_web_shows_the_same_verdict_as_coach():
+    """Trang chủ hiện kết luận ngay từ summary (ZONE trong core.js, view-overview.js) — phải trùng chữ với explain."""
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[1] / "web"
+    js = (web / "core.js").read_text(encoding="utf-8") + (web / "view-overview.js").read_text(encoding="utf-8")
+    for verdict, summary in [*explain.VERDICT.values(), explain.CALIBRATING, explain.NO_RECOVERY]:
+        assert f"'{verdict}'" in js and f"'{summary}'" in js

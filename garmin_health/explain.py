@@ -1,6 +1,7 @@
 """Giải thích + lời khuyên theo quy tắc cho từng ngày (không AI): câu chữ sinh từ chính các số app đã tính.
 
-Mỗi phần {"lines": [...], "advice": [...]}: lines = chuyện gì xảy ra và vì sao, advice = nên làm gì.
+Mỗi phần {"lines": [...], "advice": [...]}: lines = chuyện gì xảy ra và vì sao, advice = nên làm gì;
+riêng "coach" (trang chủ) có cấu trúc: kết luận "hôm nay tập nặng tới đâu", vì sao, tải tập, giờ ngủ đêm nay.
 build ghi vào processed/days/<ngày>.json → "explain"; giao diện và connector MCP đọc lại từ đó.
 Số theo kiểu EN (1,234.5), giờ ngủ dạng 7h48 — khớp với giao diện.
 """
@@ -298,6 +299,94 @@ def health(day: dict, prev: list[dict]) -> dict:
     return _section(lines, advice[:3])
 
 
+# ---------- huấn luyện viên: một câu trả lời "hôm nay tập nặng tới đâu" + việc cần làm ----------
+# (kết luận, một câu giải thích) theo vùng hồi phục — trang chủ hiện ngay từ ZONE trong web/core.js (phải giống hệt)
+VERDICT = {
+    "green": ("Tập nặng được", "Cơ thể đã sẵn sàng — hợp để tập nặng, chạy nhanh hoặc thi đấu."),
+    "yellow": ("Tập vừa sức", "Đủ sức để tập nhưng giữ cường độ vừa (aerobic, kỹ thuật) — đừng dồn bài nặng."),
+    "red": ("Nghỉ ngơi chủ động", "Cơ thể chưa hồi phục — chỉ vận động nhẹ (đi bộ, giãn cơ, yoga) và ngủ sớm."),
+}
+CALIBRATING = ("Đang hiệu chỉnh", "Cần ít nhất 4 đêm đeo đồng hồ khi ngủ để biết mức sẵn sàng của riêng bạn.")
+NO_RECOVERY = ("Chưa có điểm hồi phục", "Không có dữ liệu giấc ngủ/HRV đêm trước — đeo đồng hồ khi ngủ.")
+
+
+def _chip(key: str, day: dict) -> str | None:
+    """Một yếu tố hồi phục, viết ngắn để hiện thành nhãn: "HRV 64 ms · cao hơn thường ngày"."""
+    v, hm = day.get("vitals") or {}, day.get("health") or {}
+
+    def vs(val, unusual=False):
+        mean_ = _get(hm, key, "mean")
+        if mean_ is None or val == mean_:
+            return ""
+        return f" · {'cao' if val > mean_ else 'thấp'}{' bất thường' if unusual else ' hơn thường ngày'}"
+
+    if key == "sleep":
+        perf = _get(day, "sleep", "performance")
+        return None if perf is None else f"Hiệu suất ngủ {perf}%"
+    val = v.get(key)
+    if val is None:
+        return None
+    return {"hrv": lambda: f"HRV {_n(val)} ms{vs(val)}",
+            "rhr": lambda: f"Nhịp tim nghỉ {_n(val)} bpm{vs(val)}",
+            "resp": lambda: f"Nhịp thở {_n(val, 1)}{vs(val, True)}",
+            "spo2": lambda: f"SpO2 {_n(val, 1)}%{vs(val, True)}"}.get(key, lambda: None)()
+
+
+def _strain_plan(day: dict, zone: str | None, sex: str | None) -> dict | None:
+    s = day.get("strain") or {}
+    score, target = s.get("score"), s.get("target")
+    if score is None or not target:
+        return None
+    lo, hi = target
+    rng, partial = f"{_n(lo, 1)}–{_n(hi, 1)}", day.get("partial")
+    if score < lo:
+        status = "below"
+        if not partial:
+            text = "Thấp hơn vùng tối ưu — hôm đó tập nhẹ hơn mức cơ thể cho phép."
+        elif zone == "red":   # ngày cần nghỉ: chỉ gợi ý vận động nhẹ, không đẩy Vùng 3
+            text = f"Chỉ cần vận động nhẹ: khoảng {minutes_to_reach(score, lo, ZONE2_X, sex)} phút Vùng 2 (đi bộ nhanh, đạp nhẹ) là đủ."
+        else:
+            text = (f"Còn khoảng {minutes_to_reach(score, lo, ZONE2_X, sex)} phút Vùng 2 (vẫn nói chuyện được) "
+                    f"hoặc {minutes_to_reach(score, lo, ZONE3_X, sex)} phút Vùng 3 để vào vùng tối ưu.")
+    elif score <= hi:
+        status = "in"
+        text = ("Đã vào vùng tối ưu ✓ — đủ tải cho hôm nay, có thể dừng hoặc chỉ vận động nhẹ." if partial
+                else "Trong vùng tối ưu ✓ — đủ kích thích tập luyện mà không quá sức.")
+    else:
+        status = "over"
+        text = ("Đã vượt mục tiêu — dừng tập nặng, ăn uống đủ và ngủ sớm để kịp hồi phục." if partial
+                else f"Vượt vùng tối ưu {rng} — tải cao hơn mức cơ thể sẵn sàng; hôm sau nên nhẹ lại.")
+    return {"score": score, "target": [lo, hi], "status": status, "text": text}
+
+
+def _tonight(planner: dict | None) -> dict | None:
+    opts = {o["key"]: o for o in (planner or {}).get("options") or []}
+    peak, perform = opts.get("peak"), opts.get("perform")
+    if not (peak and perform):
+        return None
+    need = planner["need"]
+    return {"bedtime": perform["bedtime"], "bedtime_pct": perform["pct"], "bedtime_peak": peak["bedtime"],
+            "wake": planner["wake"], "need_h": need["total_h"], "debt_h": need.get("debt_h") or 0.0,
+            "text": f"Lên giường trước {perform['bedtime']} (đạt {perform['pct']}% nhu cầu), lý tưởng {peak['bedtime']} "
+                    f"để ngủ đủ {_dur(need['total_h'])} — dậy {planner['wake']}."}
+
+
+def coach(day: dict, *, planner: dict | None = None, questions=(), sex: str | None = None) -> dict:
+    """Trang chủ kiểu WHOOP: kết luận theo hồi phục, vì sao (nhãn ngắn), tải tập hôm nay, giờ ngủ đêm nay, cảnh báo sức khoẻ."""
+    r = day.get("recovery") or {}
+    zone = r.get("zone") if r.get("score") is not None and r.get("zone") in VERDICT else None
+    verdict, summary = VERDICT[zone] if zone else CALIBRATING if r.get("calibrating") else NO_RECOVERY
+    why = [{"key": k, "text": t, "pts": round(p), "good": p > 0} for k, p in _drivers(day) if (t := _chip(k, day))]
+    labels = {q["key"]: q["label"] for q in questions}
+    answered = day.get("journal") or {}
+    habits = [labels[k] for k in NEGATIVE_HABITS if answered.get(k) and k in labels]
+    if habits:
+        why.append({"key": "journal", "text": f"Nhật ký: {', '.join(habits)}", "pts": None, "good": False})
+    return {"zone": zone, "verdict": verdict, "summary": summary, "why": why,
+            "strain": _strain_plan(day, zone, sex), "tonight": _tonight(planner),
+            "health": [line for *_, line in _vital_alerts(day)][:2]}
+
+
 # ---------- tổng hợp ----------
 def day(days: list[dict], i: int, *, planner: dict | None = None, journal_impact=(), questions=(), sex: str | None = None) -> dict:
     """Giải thích cho days[i]; planner chỉ truyền cho ngày mới nhất (kế hoạch ngủ ĐÊM NAY)."""
@@ -317,4 +406,5 @@ def day(days: list[dict], i: int, *, planner: dict | None = None, journal_impact
     advice = (sec["recovery"]["advice"][:1] + [x for x in sec["strain"]["advice"] if x.startswith("Để vào")]
               + [x for x in sec["sleep"]["advice"] if x.startswith("Đêm nay")] + sec["health"]["advice"][:1])
     sec["outlook"] = {"title": title, **_section(lines, list(dict.fromkeys(advice))[:4])}
+    sec["coach"] = coach(d, planner=planner, questions=questions, sex=sex)
     return sec

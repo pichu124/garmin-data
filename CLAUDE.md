@@ -26,5 +26,6 @@ kiểu EN (`1,234.5`). Xem README.md cho cách dùng và công thức.
   có mật khẩu web (`auth.json`, `run.py password`), thiếu thì `serve` từ chối chạy. Có mật khẩu ⇒ `/data/*`,
   `/api/*` cần cookie phiên; file tĩnh trong `web/` công khai (không chứa dữ liệu).
 - `explain.py` chỉ diễn đạt số đã tính (không tính điểm mới); build ghi vào `days/<ngày>.json` → `explain`.
+  Trang chủ hiện kết luận ngay từ `ZONE` (core.js) — chữ phải trùng `explain.VERDICT` (có test).
 - Connector `/mcp` (mcp.py) CHỈ ĐỌC, token riêng (mcp.json chỉ giữ SHA-256), không dùng cookie web;
   công cụ mới phải `readOnlyHint` + có test; token trong đường dẫn phải bị che khi ghi log.

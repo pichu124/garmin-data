@@ -66,7 +66,8 @@ def test_get_day_latest_and_older(conn, demo_summary):
     last = summary["days"][-1]
     assert d["date"] == last["date"] and d["partial_day"] is True
     assert d["recovery"]["score_pct"] == last["recovery"]["score"]
-    assert set(d["app_explanation"]) == {"outlook", "recovery", "sleep", "strain", "health"}
+    assert set(d["app_explanation"]) == {"outlook", "recovery", "sleep", "strain", "health", "coach"}
+    assert d["app_explanation"]["coach"]["tonight"]["bedtime"] == d["sleep_plan_tonight"]["options"][1]["bedtime"]
     assert d["sleep_plan_tonight"]["options"][0]["label"] == "Đỉnh"
     assert "onset_min" not in (d["sleep"] or {}) and "load" not in d["strain"]
     _, old = call(conn, "get_day", date=summary["days"][-10]["date"])

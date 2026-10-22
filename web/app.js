@@ -40,7 +40,7 @@
       h('button', { type: 'button', 'aria-current': S.tab === k ? 'page' : null, onclick: () => go({ tab: k, sub: k === 'home' ? 'overview' : S.sub }) }, icon(k === 'home' ? 'home' : k), label)));
   }
   function homeTabs() {
-    const items = [['overview', 'Tổng quan'], ['sleep', 'Ngủ'], ['recovery', 'Hồi phục'], ['strain', 'Strain']];
+    const items = [['overview', 'Tổng quan'], ['recovery', 'Hồi phục'], ['strain', 'Strain'], ['sleep', 'Ngủ']];   // thứ tự vòng lặp trong ngày
     return h('div', { class: 'tabs', role: 'tablist' }, items.map(([k, label]) =>
       h('button', { type: 'button', role: 'tab', 'aria-selected': String(S.sub === k), onclick: () => go({ sub: k }) }, label)));
   }
