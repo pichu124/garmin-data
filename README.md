@@ -14,11 +14,17 @@ theo cách của **WHOOP**, rồi hiển thị bằng giao diện tối giống 
 | Health Monitor | Sức khoẻ | HRV, RHR, nhịp thở, SpO2 có trong ngưỡng bình thường của bạn không |
 | Journal | Nhật ký | Trả lời "hôm qua có uống rượu / ăn muộn…" → app đo thói quen nào làm hồi phục tăng/giảm |
 | Trends / Weekly | Xu hướng | 7 ngày · 30 ngày · 3 tháng · 6 tháng, tổng kết tuần, strain hôm trước → hồi phục hôm sau |
-| Daily Outlook / Insights | Nhận định + Giải thích | Mỗi chỉ số kèm câu giải thích "vì sao" và lời khuyên làm được ngay, sinh từ chính số liệu (không cần AI) |
+| Daily Outlook / Insights | Hôm nay nên tập thế nào? + Giải thích | Một kết luận mỗi sáng (tập nặng / vừa / nghỉ) kèm vì sao, số phút cần tập, giờ đi ngủ; mỗi chỉ số có câu giải thích và lời khuyên — sinh từ chính số liệu (không cần AI) |
 | WHOOP Coach | Trò chuyện với Claude | Hỏi đáp bằng gói Claude Pro/Max của bạn qua connector chỉ đọc (mục [Trò chuyện với Claude](#trò-chuyện-với-claude-connector)) |
 
 Ngoài ra vẫn hiện các chỉ số riêng của Garmin (Body Battery, Training
-Readiness, Sleep Score, Stress, VO2 max, HRV Status) để đối chiếu.
+Readiness, Sleep Score, Stress, VO2 max, HRV Status) để đối chiếu — ở tab Sức khoẻ,
+không ở trang chủ.
+
+**Triết lý:** Garmin có rất nhiều chỉ số nhưng không xếp chúng quanh một vòng lặp đơn
+giản. App này xếp mọi thứ quanh đúng 3 trụ **Hồi phục → Strain → Ngủ**, hiệu chỉnh theo
+baseline của chính bạn, và gộp thành **một câu trả lời mỗi sáng: hôm nay nên tập nặng
+tới đâu?** — "Garmin là đồng hồ thi đấu, app này là huấn luyện viên của cơ thể".
 
 > ⚠️ WHOOP không công bố công thức. Điểm ở đây là **ước lượng theo cùng nguyên
 > lý** (mô tả ở cuối file), không phải số của WHOOP, và **không phải tư vấn y tế**.
@@ -81,10 +87,19 @@ Sinh 150 ngày dữ liệu giả **đúng định dạng JSON của Garmin** và
 
 ## Giao diện
 
-- **Tổng quan**: 3 vòng Ngủ · Hồi phục · Strain (bấm vào để xem chi tiết),
-  **Nhận định hôm nay** (yếu tố chính kéo hồi phục lên/xuống, giấc ngủ, cảnh báo sức khoẻ,
-  nên tập bao nhiêu, mấy giờ đi ngủ + thanh strain mục tiêu), hoạt động trong ngày,
-  chỉ số chính so với trung bình 30 ngày, nhịp tim cả ngày.
+- **Tổng quan** — đọc từ trên xuống theo vòng lặp trong ngày, câu trả lời trước, số liệu sau:
+  1. **Hôm nay nên tập thế nào?** Vòng Hồi phục + một kết luận theo vùng — *Tập nặng được*
+     (xanh) · *Tập vừa sức* (vàng) · *Nghỉ ngơi chủ động* (đỏ) — trên thang Nhẹ · Vừa · Nặng,
+     kèm **Vì sao**: các yếu tố cộng/trừ ≥3 điểm (HRV, nhịp tim nghỉ, giấc ngủ…) và thói
+     quen trong nhật ký hôm qua.
+  2. **Tải tập hôm nay**: strain so với vùng tối ưu + còn bao nhiêu phút Vùng 2 / Vùng 3
+     để vào vùng (ngày đỏ chỉ gợi ý vận động nhẹ).
+  3. **Ngủ đêm nay**: đêm qua ngủ bao nhiêu / cần bao nhiêu, giờ lên giường (đạt 85% và
+     100% nhu cầu), nợ ngủ.
+  4. **Sức khoẻ** gói thành một dòng (x/4 chỉ số trong ngưỡng; lệch thì hiện cảnh báo),
+     rồi hoạt động, chỉ số chính so với 30 ngày, nhịp tim cả ngày.
+
+  Bấm vòng/thẻ để sang tab chi tiết; các tab xếp theo vòng lặp: Hồi phục → Strain → Ngủ.
 - **Giải thích & lời khuyên** ở đầu các trang Hồi phục, Ngủ, Strain, Sức khoẻ: câu chữ
   sinh theo quy tắc từ đúng các số đang hiển thị (`explain.py`), không gửi dữ liệu đi đâu.
 - **Ngủ**: nhu cầu ngủ chi tiết, giai đoạn ngủ, hypnogram, hiệu quả / độ đều,

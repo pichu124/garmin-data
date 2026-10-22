@@ -41,7 +41,10 @@ của chính người dùng thay vì chuẩn chung. Trả lời tiếng Việt, 
 thường kéo dài (SpO2 thấp, nhịp tim nghỉ tăng cùng nhịp thở) thì khuyên gặp bác sĩ. Đây là ước lượng theo nguyên
 lý WHOOP, không phải số của WHOOP.
 Garmin chỉ giữ nhịp tim/stress theo phút ~4–5 tháng: ngày cũ hơn có strain.source = "activities" (strain chỉ từ
-buổi tập, thấp hơn thực tế) và không có stress."""
+buổi tập, thấp hơn thực tế) và không có stress.
+get_day → app_explanation.coach là kết luận app đang hiện trên trang chủ: verdict (tập nặng được / tập vừa sức /
+nghỉ ngơi chủ động), why (yếu tố + điểm), strain.text (còn bao nhiêu phút để vào vùng tối ưu), tonight (giờ lên giường).
+Tư vấn nên khớp với kết luận đó; nếu thấy khác thì nói rõ vì sao."""
 
 _DATE = {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"}
 TOOLS = [
@@ -101,8 +104,9 @@ PROMPTS = {
     "nhan-dinh-sang-nay": {
         "title": "Nhận định sáng nay",
         "description": "Cơ thể hôm nay ra sao, vì sao, nên tập gì và ngủ lúc nào.",
-        "text": ("Gọi get_day (ngày mới nhất) và get_trends với days=7, rồi viết nhận định sáng nay cho tôi: hồi phục và "
-                 "vì sao (yếu tố nào kéo lên/xuống), giấc ngủ đêm qua so với nhu cầu, nên tập gì hôm nay (strain mục tiêu), "
+        "text": ("Gọi get_day (ngày mới nhất) và get_trends với days=7, rồi viết nhận định sáng nay cho tôi. Câu đầu trả lời "
+                 "thẳng: hôm nay nên tập nặng tới đâu (theo app_explanation.coach). Sau đó: hồi phục và vì sao (yếu tố nào "
+                 "kéo lên/xuống), giấc ngủ đêm qua so với nhu cầu, nên tập gì hôm nay (strain mục tiêu, bao nhiêu phút), "
                  "giờ đi ngủ tối nay, lưu ý sức khoẻ nếu có. Ngắn gọn, có số liệu."),
     },
     "tong-ket-tuan": {

@@ -46,7 +46,8 @@
     })));
     if (val(d, 'garmin', 'stress_min')) out.push(stressCard(d));
     const gm = d.garmin || {};
-    out.push(h('h3', { class: 'section-title', text: 'Chỉ số riêng của Garmin' }));
+    out.push(h('h3', { class: 'section-title', text: 'Chỉ số riêng của Garmin' }),
+      h('p', { class: 'note', text: 'Các điểm Garmin tự tính — để đối chiếu với Hồi phục · Strain · Ngủ của app.' }));
     out.push(h('div', { class: 'tiles t4', style: { marginBottom: '12px' } },
       tile('Body Battery', isNum(gm.bb_high) ? `${gm.bb_low ?? '—'}–${gm.bb_high}` : '—', '', isNum(gm.bb_charged) ? `nạp +${gm.bb_charged} · xả −${gm.bb_drained ?? '—'}` : null),
       tile('Training Readiness', fmt.n(gm.readiness), '', gm.readiness_level ? readinessVi(gm.readiness_level) : null),
